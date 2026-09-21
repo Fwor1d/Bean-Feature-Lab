@@ -1,36 +1,35 @@
-# macOS
-.DS_Store
-
-# Python
 .venv/
+.DS_Store
+*.egg-info/
+.impeccable/questions/*.log
+.impeccable/review/
 __pycache__/
-*.py[cod]
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-
-# Node / Next.js
-node_modules/
-.next/
-out/
-
-# Environment
+*.py[cod]
 .env
 .env.*
 !.env.example
-
-# IDE
+node_modules/
+.next/
+out/
+*.tsbuildinfo
 .vscode/
 .idea/
-
-# Logs
 *.log
-
-# Temporary files
 *.tmp
 *.temp
-
-# ML temporary artifacts
+storage/sqlite/*.sqlite*
+storage/sqlite/*.db*
+artifacts/runs/*
+!artifacts/runs/README.md
+artifacts/models/*
+!artifacts/models/README.md
+data/raw/*
+!data/raw/README.md
+data/processed/*
+!data/processed/README.md
 artifacts/tmp/
 artifacts/cache/
 data/processed/cache/
