@@ -1,7 +1,7 @@
 export type RunStatus = "DRAFT" | "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
-export type ResultState = "NOT_CALCULATED";
+export type ResultState = "NOT_CALCULATED" | "CALCULATED";
 export type ModelId = "logistic_regression" | "svm_rbf" | "random_forest" | "xgboost" | "lightgbm" | "mlp";
-export type SelectorId = "mutual_information" | "anova" | "rfe" | "l1_logistic" | "tree_importance" | "pca" | "correlation_pruning" | "sequential_feature_selection";
+export type SelectorId = "none" | "mutual_information" | "anova" | "rfe" | "l1_logistic" | "tree_importance" | "pca" | "correlation_pruning" | "sequential_feature_selection";
 
 export interface ExperimentConfig {
   model: ModelId;
@@ -12,6 +12,8 @@ export interface ExperimentConfig {
   required_raw_feature_count: number | null;
   dataset_version: string | null;
   seed: number;
+  evaluation_mode?: "protocol" | "smoke";
+  search_space?: Record<string, unknown[]>;
 }
 
 export interface Experiment {
@@ -31,7 +33,7 @@ export interface Run {
   started_at: string | null;
   finished_at: string | null;
   error: string | null;
-  metrics: null;
+  metrics: { macro_f1_mean: number; accuracy_mean: number } | null;
   result_state: ResultState;
 }
 
@@ -56,6 +58,9 @@ export interface Dataset {
   source_id: number;
   version: string;
   validated: boolean;
+  rows?: number;
+  feature_count?: number;
+  arff_sha256?: string;
 }
 
 export interface ApiErrorBody {

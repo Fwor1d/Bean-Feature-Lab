@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from beanfeature_application.contracts import Experiment, ExperimentConfig, Run
-from beanfeature_research.contracts import ModelId, RunStatus, SelectorId
+from beanfeature_research.contracts import ModelId, ResultState, RunStatus, SelectorId
 
 
 class ErrorDetail(BaseModel):
@@ -28,7 +28,7 @@ class SystemInfoResponse(BaseModel):
     git_commit: str | None
     database: str
     worker: str
-    scientific_results: Literal["NOT_CALCULATED"]
+    scientific_results: ResultState
 
 
 class ProjectResponse(BaseModel):
@@ -41,6 +41,9 @@ class DatasetResponse(BaseModel):
     source_id: int
     version: str
     validated: bool
+    rows: int | None = None
+    feature_count: int | None = None
+    arff_sha256: str | None = None
 
 
 class ExperimentConfigDTO(BaseModel):
@@ -52,6 +55,8 @@ class ExperimentConfigDTO(BaseModel):
     required_raw_feature_count: int | None = None
     dataset_version: str | None = Field(default=None, max_length=128)
     seed: int = 42
+    evaluation_mode: Literal["protocol", "smoke"] = "protocol"
+    search_space: dict[str, list[object]] = Field(default_factory=dict)
 
     def to_domain(self) -> ExperimentConfig:
         return ExperimentConfig(**self.model_dump())
@@ -89,8 +94,8 @@ class RunResponse(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     error: str | None
-    metrics: None = None  # No scientific result path exists in Stage 4A.
-    result_state: Literal["NOT_CALCULATED"] = "NOT_CALCULATED"
+    metrics: dict[str, float] | None = None
+    result_state: ResultState = ResultState.NOT_CALCULATED
 
     @classmethod
     def from_domain(cls, run: Run) -> "RunResponse":
@@ -103,4 +108,60 @@ class RunResponse(BaseModel):
             started_at=run.started_at,
             finished_at=run.finished_at,
             error=run.error,
+            metrics={
+                "macro_f1_mean": float(run.summary["macro_f1_mean"]),
+                "accuracy_mean": float(run.summary["accuracy_mean"]),
+            }
+            if run.status is RunStatus.COMPLETED and run.summary
+            else None,
+            result_state=ResultState.CALCULATED
+            if run.status is RunStatus.COMPLETED and run.summary
+            else ResultState.NOT_CALCULATED,
         )
+
+
+class RunSummaryResponse(BaseModel):
+    run_id: str
+    status: RunStatus
+    result_state: ResultState
+    summary: dict[str, object] | None
+
+
+class FeatureBudgetPointResponse(BaseModel):
+    run_id: str
+    model: ModelId
+    budget_kind: Literal["original_features"]
+    k_original_features: int
+    macro_f1_mean: float
+    macro_f1_fold_sd_descriptive: float | None
+    dataset_hash: str
+    outer_split_set_sha256: str
+
+
+class FoldResultResponse(BaseModel):
+    fold_id: str
+    split_sha256: str
+    inner_seed: int
+    train_size: int
+    test_size: int
+    best_params: dict[str, object]
+    inner_best_macro_f1: float
+    selected_original_features: list[str] | None
+    representation: dict[str, object]
+    macro_f1: float
+    accuracy: float
+    per_class_recall: dict[str, float]
+    confusion_matrix: list[list[int]]
+    roc_auc_ovr_macro: float | None
+    roc_auc_reason: str | None
+    search_seconds: float
+    refit_seconds: float
+    search_plus_refit_seconds: float
+    inference_latency: dict[str, object]
+    serialized_pipeline_bytes: int
+    peak_memory_bytes: int | None
+    peak_memory_reason: str | None
+    y_true: list[str]
+    y_pred: list[str]
+    model: ModelId
+    selector: SelectorId

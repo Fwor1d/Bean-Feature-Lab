@@ -1,12 +1,27 @@
-from beanfeature_research.contracts import OriginalFeatureBudget, PCARepresentation, SelectorId
+import json
+import traceback
+from collections.abc import Callable
+from dataclasses import asdict, replace
+from hashlib import sha256
+
+from beanfeature_research.contracts import (
+    ModelId,
+    OriginalFeatureBudget,
+    PCARepresentation,
+    SelectorId,
+)
+from beanfeature_research.engine import EngineCondition, preset_search_space, run_nested_cv
 
 from .contracts import (
+    DatasetRepository,
+    DatasetStore,
     Experiment,
     ExperimentConfig,
     ExperimentRepository,
     MetadataProvider,
     Run,
     RunRepository,
+    ScientificArtifactStore,
 )
 
 
@@ -24,10 +39,17 @@ class ApplicationService:
         experiments: ExperimentRepository,
         runs: RunRepository,
         metadata: MetadataProvider,
+        *,
+        datasets: DatasetRepository | None = None,
+        dataset_store: DatasetStore | None = None,
+        artifacts: ScientificArtifactStore | None = None,
     ) -> None:
         self.experiments = experiments
         self.runs = runs
         self.metadata = metadata
+        self.datasets = datasets
+        self.dataset_store = dataset_store
+        self.artifacts = artifacts
 
     def create_experiment(self, name: str, configuration: ExperimentConfig) -> Experiment:
         clean_name = name.strip()
@@ -43,6 +65,11 @@ class ApplicationService:
             if configuration.k_original_features is None:
                 raise ValueError("k_original_features is required")
             OriginalFeatureBudget(configuration.k_original_features)
+            if (
+                configuration.selector is SelectorId.NONE
+                and configuration.k_original_features != 16
+            ):
+                raise ValueError("No-selector baseline requires 16 original features")
         else:
             if (
                 configuration.selector is not SelectorId.PCA
@@ -57,6 +84,20 @@ class ApplicationService:
                 if configuration.required_raw_feature_count is not None
                 else 16,
             )
+        if configuration.evaluation_mode not in ("protocol", "smoke"):
+            raise ValueError("Unknown evaluation mode")
+        frozen_space = preset_search_space(
+            configuration.model, smoke=configuration.evaluation_mode == "smoke"
+        )
+        if configuration.search_space and configuration.search_space != frozen_space:
+            raise ValueError("Search space differs from predeclared small-grid-v1 preset")
+        configuration = replace(configuration, search_space=frozen_space)
+        if self.datasets and configuration.dataset_version is None:
+            registered = self.datasets.list()
+            if len(registered) == 1:
+                configuration = replace(
+                    configuration, dataset_version=str(registered[0]["version"])
+                )
         return self.experiments.create(clean_name, configuration)
 
     def list_experiments(self) -> list[Experiment]:
@@ -92,3 +133,139 @@ class ApplicationService:
 
     def system_info(self) -> dict[str, object]:
         return self.metadata.system_info()
+
+    def fetch_dataset(self, *, accept_official_schema: bool) -> dict[str, object]:
+        if not self.dataset_store or not self.datasets:
+            raise RuntimeError("Dataset infrastructure is unavailable")
+        self.dataset_store.download()
+        return self.validate_dataset(accept_official_schema=accept_official_schema)
+
+    def validate_dataset(self, *, accept_official_schema: bool) -> dict[str, object]:
+        if not self.dataset_store or not self.datasets:
+            raise RuntimeError("Dataset infrastructure is unavailable")
+        manifest = self.dataset_store.validate(accept_official_schema=accept_official_schema)
+        self.datasets.register(manifest)
+        return manifest
+
+    def list_datasets(self) -> list[dict[str, object]]:
+        return self.datasets.list() if self.datasets else []
+
+    def recover_interrupted_runs(self) -> int:
+        return self.runs.recover_running()
+
+    def process_next_run(self, *, should_stop: Callable[[], bool] | None = None) -> Run | None:
+        run = self.runs.claim_next()
+        if run is None:
+            return None
+        if not self.dataset_store or not self.artifacts:
+            self.runs.fail(run.id, "ML infrastructure is unavailable")
+            return self.get_run(run.id)
+        try:
+            experiment = self.get_experiment(run.experiment_id)
+            dataset, manifest = self.dataset_store.load()
+            config = experiment.configuration
+            if config.dataset_version != manifest["dataset_version"]:
+                raise ValueError(
+                    "Experiment dataset version is absent or differs from validated UCI 602"
+                )
+            condition = EngineCondition(
+                model=ModelId(config.model),
+                selector=SelectorId(config.selector),
+                budget_kind=config.budget_kind,
+                k_original_features=config.k_original_features,
+                n_components=config.n_components,
+                seed=config.seed,
+                search_space=config.search_space,
+                evaluation_mode=config.evaluation_mode,
+            )
+            provenance = self.metadata.provenance()
+            canonical = json.dumps(
+                {
+                    "configuration": asdict(config),
+                    "dataset_hash": dataset.arff_sha256,
+                    "provenance": provenance,
+                },
+                sort_keys=True,
+                default=str,
+            ).encode()
+            fingerprint = sha256(canonical).hexdigest()
+            result = run_nested_cv(
+                dataset.features,
+                dataset.target,
+                condition,
+                on_fold=lambda fold: self.artifacts.write_json(
+                    f"{run.display_id}/fold-{fold['fold_id']}.json", fold
+                ),
+                should_cancel=lambda: (
+                    bool(should_stop and should_stop())
+                    or self.get_run(run.id).status.value == "CANCELLED"
+                ),
+            )
+            payload = {
+                "run_id": run.display_id,
+                "experiment_id": experiment.id,
+                "dataset_manifest": manifest,
+                "configuration": asdict(config),
+                "provenance": provenance,
+                "fingerprint": fingerprint,
+                "summary": result.summary,
+                "folds": result.folds,
+                "splits": result.splits,
+            }
+            path = f"{run.display_id}/result.json"
+            digest = self.artifacts.write_json(path, payload)
+            verified = self.artifacts.read_json(path, digest)
+            expected = 15 if config.evaluation_mode == "protocol" else 2
+            if not isinstance(verified, dict) or len(verified.get("folds", [])) != expected:
+                raise ValueError("Result artifact does not contain all required outer folds")
+            completed = self.runs.complete(
+                run.id, path, digest, result.summary, dataset.arff_sha256, fingerprint
+            )
+            if completed is None:
+                raise InterruptedError("Run state changed before completion")
+            return completed
+        except InterruptedError:
+            if self.get_run(run.id).status.value == "RUNNING":
+                self.runs.fail(run.id, "Worker interrupted; partial folds are not final results")
+            return self.get_run(run.id)
+        except Exception as exc:
+            detail_path = f"{run.display_id}/error.json"
+            self.artifacts.write_json(
+                detail_path, {"error_type": type(exc).__name__, "traceback": traceback.format_exc()}
+            )
+            self.runs.fail(run.id, f"{type(exc).__name__}: {exc}", detail_path)
+            return self.get_run(run.id)
+
+    def get_run_result(self, run_id: int) -> dict[str, object] | None:
+        run = self.get_run(run_id)
+        if not run.result_artifact or not run.result_sha256 or not self.artifacts:
+            return None
+        payload = self.artifacts.read_json(run.result_artifact, run.result_sha256)
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid scientific result artifact")
+        return payload
+
+    def feature_budget_series(self) -> list[dict[str, object]]:
+        points = []
+        for run in self.list_runs():
+            summary = run.summary
+            if run.status.value != "COMPLETED" or not summary:
+                continue
+            if (
+                summary.get("evaluation_mode") != "protocol"
+                or summary.get("selector") != "mutual_information"
+            ):
+                continue
+            points.append(
+                {
+                    "run_id": run.display_id,
+                    "model": summary["model"],
+                    "budget_kind": summary["budget_kind"],
+                    "k_original_features": summary["k_original_features"],
+                    "macro_f1_mean": summary["macro_f1_mean"],
+                    "macro_f1_fold_sd_descriptive": summary["macro_f1_fold_sd_descriptive"],
+                    "dataset_hash": run.dataset_hash,
+                    "outer_split_set_sha256": summary["outer_split_set_sha256"],
+                }
+            )
+        return points

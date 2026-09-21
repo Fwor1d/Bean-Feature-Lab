@@ -36,6 +36,37 @@ class RunRow(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
+    result_artifact: Mapped[str | None] = mapped_column(String(255))
+    result_sha256: Mapped[str | None] = mapped_column(String(64))
+    summary: Mapped[dict | None] = mapped_column(JSON)
+    dataset_hash: Mapped[str | None] = mapped_column(String(64))
+    fingerprint: Mapped[str | None] = mapped_column(String(64))
+    error_detail_artifact: Mapped[str | None] = mapped_column(String(255))
+
+
+class DatasetVersionRow(Base):
+    __tablename__ = "dataset_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    version: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    archive_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    arff_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    manifest_path: Mapped[str] = mapped_column(String(255), nullable=False)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    rows: Mapped[int] = mapped_column(Integer, nullable=False)
+    feature_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    classes: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+
+
+class RunEventRow(Base):
+    __tablename__ = "run_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    note: Mapped[str | None] = mapped_column(String(255))
 
 
 class WorkerHeartbeatRow(Base):

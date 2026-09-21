@@ -17,9 +17,12 @@ from .schemas import (
     DatasetResponse,
     ErrorResponse,
     ExperimentResponse,
+    FeatureBudgetPointResponse,
+    FoldResultResponse,
     HealthResponse,
     ProjectResponse,
     RunResponse,
+    RunSummaryResponse,
     SystemInfoResponse,
 )
 
@@ -106,8 +109,8 @@ def create_app(database_url: str | None = None) -> FastAPI:
         return []
 
     @application.get("/api/v1/datasets", response_model=list[DatasetResponse])
-    def datasets() -> list[DatasetResponse]:
-        return []
+    def datasets(service: Service) -> list[DatasetResponse]:
+        return [DatasetResponse.model_validate(item) for item in service.list_datasets()]
 
     @application.get("/api/v1/experiments", response_model=list[ExperimentResponse])
     def experiments(service: Service) -> list[ExperimentResponse]:
@@ -141,6 +144,42 @@ def create_app(database_url: str | None = None) -> FastAPI:
     @application.get("/api/v1/runs/{run_id}", response_model=RunResponse)
     def get_run(run_id: int, service: Service) -> RunResponse:
         return RunResponse.from_domain(service.get_run(run_id))
+
+    @application.get("/api/v1/runs/{run_id}/summary", response_model=RunSummaryResponse)
+    def run_summary(run_id: int, service: Service) -> RunSummaryResponse:
+        run = service.get_run(run_id)
+        return RunSummaryResponse(
+            run_id=run.display_id,
+            status=run.status,
+            result_state="CALCULATED" if run.summary else "NOT_CALCULATED",
+            summary=run.summary,
+        )
+
+    @application.get("/api/v1/runs/{run_id}/folds", response_model=list[FoldResultResponse])
+    def run_folds(run_id: int, service: Service):
+        result = service.get_run_result(run_id)
+        if result is None:
+            return error_response("not_calculated", "Scientific result is not available", 409)
+        return [FoldResultResponse.model_validate(fold) for fold in result["folds"]]
+
+    @application.get("/api/v1/runs/{run_id}/stability")
+    def run_stability(run_id: int, service: Service):
+        result = service.get_run_result(run_id)
+        if result is None:
+            return error_response("not_calculated", "Scientific result is not available", 409)
+        return {
+            "run_id": result["run_id"],
+            "feature_stability": result["summary"].get("feature_stability"),
+        }
+
+    @application.get(
+        "/api/v1/feature-budget/series", response_model=list[FeatureBudgetPointResponse]
+    )
+    def feature_budget_series(service: Service) -> list[FeatureBudgetPointResponse]:
+        return [
+            FeatureBudgetPointResponse.model_validate(item)
+            for item in service.feature_budget_series()
+        ]
 
     @application.post("/api/v1/runs/{run_id}/cancel", response_model=RunResponse)
     def cancel_run(run_id: int, service: Service) -> RunResponse:

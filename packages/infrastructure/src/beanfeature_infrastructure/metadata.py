@@ -2,13 +2,15 @@ import platform
 import subprocess
 import sys
 from datetime import UTC, datetime
+from hashlib import sha256
 from importlib.metadata import version
+from pathlib import Path
 
 from sqlalchemy import select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
-from .database import WorkerHeartbeatRow, utc_now
+from .database import RunRow, WorkerHeartbeatRow, utc_now
 
 
 class EnvironmentMetadata:
@@ -52,6 +54,11 @@ class EnvironmentMetadata:
             git_commit = result.stdout.strip() or None
         except (OSError, subprocess.SubprocessError):
             pass
+        with self.sessions() as session:
+            has_results = (
+                session.scalar(select(RunRow.id).where(RunRow.status == "COMPLETED").limit(1))
+                is not None
+            )
         return {
             "app_version": version("beanfeature-lab"),
             "api_version": "v1",
@@ -60,7 +67,49 @@ class EnvironmentMetadata:
             "git_commit": git_commit,
             "database": self.database_state(),
             "worker": self.worker_status(),
-            "scientific_results": "NOT_CALCULATED",
+            "scientific_results": "CALCULATED" if has_results else "NOT_CALCULATED",
+        }
+
+    def provenance(self) -> dict[str, object]:
+        """Capture a content fingerprint even when research code is not committed."""
+        root = Path.cwd()
+        digest = sha256()
+        for base in (
+            "packages/research",
+            "packages/application",
+            "packages/infrastructure",
+            "apps/worker",
+            "configs/experiments",
+        ):
+            for path in sorted((root / base).rglob("*.py")):
+                if "__pycache__" in path.parts:
+                    continue
+                digest.update(str(path.relative_to(root)).encode())
+                digest.update(path.read_bytes())
+        digest.update((root / "pyproject.toml").read_bytes())
+        try:
+            commit = subprocess.run(
+                ["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=2, check=True
+            ).stdout.strip()
+            dirty = bool(
+                subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=True,
+                ).stdout.strip()
+            )
+        except (OSError, subprocess.SubprocessError):
+            commit, dirty = None, True
+        libraries = ("numpy", "pandas", "scipy", "scikit-learn", "xgboost", "lightgbm")
+        return {
+            "git_commit": commit,
+            "git_dirty": dirty,
+            "source_tree_sha256": digest.hexdigest(),
+            "python_version": platform.python_version(),
+            "platform": f"{sys.platform}-{platform.machine()}",
+            "package_versions": {name: version(name) for name in libraries},
         }
 
 

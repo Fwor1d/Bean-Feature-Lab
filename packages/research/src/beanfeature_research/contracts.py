@@ -17,6 +17,7 @@ class ModelId(StrEnum):
 
 
 class SelectorId(StrEnum):
+    NONE = "none"
     MUTUAL_INFORMATION = "mutual_information"
     ANOVA = "anova"
     RFE = "rfe"
