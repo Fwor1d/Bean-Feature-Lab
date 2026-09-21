@@ -1,0 +1,5 @@
+{
+  "mode": "edit",
+  "approved": false,
+  "prompt": "Edit this existing desktop scientific UI concept for BeanFeature Lab while preserving its high-fidelity light 'Научный атлас' layout: wide central empty Plotly-like figure, narrow figure index left, annotation margin right, table below, cool white/navy/ultramarine palette. Correct scientific and product-truth defects ONLY: remove the invented tagline beside the logo and remove invented version 'v1.0.0'; replace with blank breathing room. Replace x-axis numeric tick labels 0,20,40,60,80,100 with either correct protocol ticks 1 through 16 OR no numeric ticks at all; never imply k beyond 16. Keep x label 'Число исходных признаков k'. Keep the plot empty with 'Не рассчитано' and no curves, points, ranges, results, percentages, ranking or metrics. Reduce the left figure index to five practical scientific sections instead of ten: 'Бюджет признаков', 'Анализ признаков', 'Сравнение', 'Матрица ошибок', 'Воспроизводимость'. Keep all controls professional, conventional MUI feasible, Russian interface. Do not add any fake data, slogan, hero, cards, decoration, or garden imagery. No other changes."
+}

@@ -1,0 +1,6 @@
+{
+  "mode": "edit",
+  "approved": false,
+  "source": ".impeccable/mocks/decision/instrument-workbench.png",
+  "prompt": "Precisely edit this existing high-fidelity Russian-language BeanFeature Lab 'Приборная рабочая станция' desktop UI mockup. Preserve its three-zone layout, charcoal chrome, dominant empty white scientific chart, correct k=1..16 axis, cool restrained colors, and all empty-state indications. Fix only three scientific/workflow labels: change the lower table heading 'Выбранные признаки (0)' to 'Признаки — не рассчитано' so zero is not shown as a measured selection; remove the 'Добавить вручную' button from that table toolbar (replace with a simple 'Подробнее' action if needed); change the right-side bottom action 'Запустить анализ' to 'Открыть Experiment Runner' so running happens in the separate runner, not on the Feature Budget screen. In the criterion description replace any promise about which k will be selected with neutral text 'Достаточность оценивается после расчёта'. Do not add chart marks, numerical result values, percentages, model ranking, optimal k, new controls, new layout, slogan, cards, gradients or decoration. Keep everything else unchanged."
+}
