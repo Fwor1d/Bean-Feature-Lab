@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "beanfeature-lab"
+version = "0.1.0"
+description = "Local research application foundation for Dry Bean feature-budget experiments"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.30,<1",
+  "pydantic>=2.9,<3",
+  "sqlalchemy>=2.0,<3",
+  "alembic>=1.13,<2",
+  "typer>=0.12,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "httpx>=0.27,<1", "ruff>=0.8,<1"]
+
+[project.scripts]
+beanfeature = "beanfeature_cli.main:app"
+beanfeature-worker = "beanfeature_worker.main:main"
+
+[tool.setuptools.packages.find]
+where = ["packages/research/src", "packages/application/src", "packages/infrastructure/src", "apps/api/src", "apps/worker/src", "tools/cli/src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["packages/research/src", "packages/application/src", "packages/infrastructure/src", "apps/api/src", "apps/worker/src", "tools/cli/src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

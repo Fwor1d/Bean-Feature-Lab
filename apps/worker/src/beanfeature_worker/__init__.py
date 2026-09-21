@@ -1,0 +1,1 @@
+"""Single local worker foundation."""
