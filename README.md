@@ -1,6 +1,6 @@
 # BeanFeature Lab
 
-BeanFeature Lab is a local research workbench for measuring how the number of original Dry Bean morphological features affects multiclass classification. The Stage 4B scientific engine runs outside HTTP requests; the Stage 4A interface remains a foundation shell and is **not yet connected to result views**.
+BeanFeature Lab is a local research workbench for measuring how the number of original Dry Bean morphological features affects multiclass classification. The scientific engine runs outside HTTP requests; the Instrument Workstation UI reads real saved results through typed API contracts.
 
 ## Architecture
 
@@ -12,6 +12,8 @@ BeanFeature Lab is a local research workbench for measuring how the number of or
 - `make setup` creates project-local `.venv`, installs Python/frontend dependencies and applies migrations. It does not install into the global Python environment.
 - `make migrate` applies subsequent Alembic migrations. Defaults are SQLite at `storage/sqlite/beanfeature.sqlite`, API at `127.0.0.1:8000`, and web at `127.0.0.1:3000`. Optional overrides are described in `.env.example`; do not commit a real `.env`.
 - `make api`, `make worker`, and `make web` run in separate terminals. `make test`, `make lint`, `make format`, `make typecheck`, and `make build` cover the developer workflow.
+
+For a live demonstration, run **`make presentation`** from the repository root. It applies migrations, starts FastAPI, one local worker, an optimized Next.js build and two ephemeral Cloudflare tunnels, then prints the public Web/API URLs. Keep that terminal open; Ctrl+C stops its processes. Ports 3000/8000 must be free. Public demo writes are disabled (HTTP 403); local CLI and worker can still add real runs. The Web server reads the local API directly, while browser actions use a constrained same-origin proxy. Cloudflare quick tunnels have no uptime guarantee and expose the read-only research tool publicly for the session; stop the command when the demonstration ends. Do not put secrets or private datasets into the demo.
 
 ## Reproducible scientific execution
 
@@ -36,10 +38,10 @@ Create a short **integration smoke** run (two outer folds, two inner folds; not 
 
 Omit `--smoke` for the approved 5×3 repeated-stratified outer / 4-fold stratified inner protocol. The same seed and dataset yield identical outer split identifiers across comparable conditions. `beanfeature-worker` consumes queued runs sequentially and supports clean shutdown; an interrupted running run becomes `FAILED` on restart and can be reproduced as a new run. To enqueue the entire 86-condition Core MI matrix, first inspect the compute budget with `.venv/bin/beanfeature core enqueue-mi`; an explicit `--confirm-compute` is required to enqueue it. No expensive matrix is launched automatically.
 
-Each completed run persists fold-level predictions, confusion matrices, selected original features or PCA metadata, timings, and split identifiers in `artifacts/runs/RUN-******/result.json`; SQLite stores status, configuration, summary, hashes, and artifact reference. New, failed and cancelled runs have no scientific metrics. The API provides `/api/v1/runs/{id}/summary`, `/folds`, `/stability`, and `/api/v1/feature-budget/series` in addition to foundation endpoints; `/docs` lists all routes.
+Each completed run persists fold-level predictions, confusion matrices, selected original features or PCA metadata, timings, and split identifiers in `artifacts/runs/RUN-******/result.json`; SQLite stores status, configuration, summary, hashes, and artifact reference. New, failed and cancelled runs have no scientific metrics. The API provides `/api/v1/runs/{id}/summary`, `/detail`, `/folds`, `/stability`, `/api/v1/datasets/{id}/manifest`, and `/api/v1/feature-budget/series` in addition to foundation endpoints; `/docs` lists all routes. The UI has real Feature Budget points, a runs registry and detail, dataset/provenance, paired comparison, and experiment configuration/queueing. It never fills missing points.
 
 For two completed, matched full-protocol runs, `.venv/bin/beanfeature runs compare COMPACT_RUN_ID BASELINE_RUN_ID` saves a separate hash-identified artifact with the 15 paired fold losses. The baseline must be the same model on all 16 original features without a selector. `GET /api/v1/runs/{id}/paired-comparison/{baseline_id}` computes the same read-only comparison; neither path declares a sufficient `k`.
 
 ## Scientific integrity boundary
 
-Scaling, selection/PCA, hyperparameter search and fitting occur inside the relevant CV training folds. PCA components are never counted as physically measured original features. Macro-F1, accuracy, recall, confusion matrices and optional multiclass ROC AUC come from real outer-test predictions only; unavailable metrics remain `null`. Resource timing measures the full pipeline; peak memory is explicitly not calculated. The predeclared sufficient-k margin is 0.01 Macro-F1, but no sufficient-k claim is made until an uncertainty-interval method appropriate for dependent repeated-CV folds is approved. The UI result integration, final classifier artifact, Extended selectors, Pareto analysis and reporting are later stages.
+Scaling, selection/PCA, hyperparameter search and fitting occur inside the relevant CV training folds. PCA components are never counted as physically measured original features. Macro-F1, accuracy, recall, confusion matrices and optional multiclass ROC AUC come from real outer-test predictions only; unavailable metrics remain `null`. Resource timing measures the full pipeline; peak memory is explicitly not calculated. The predeclared sufficient-k margin is 0.01 Macro-F1, but no sufficient-k claim is made until an uncertainty-interval method appropriate for dependent repeated-CV folds is approved. Final classifier artifact, Extended selectors, Pareto analysis and report generation remain later stages.

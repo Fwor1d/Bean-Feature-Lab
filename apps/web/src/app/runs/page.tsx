@@ -1,22 +1,39 @@
-import { Alert, Chip } from "@mui/material";
+import { Alert } from "@mui/material";
+import { RunsGrid, type RunGridRow } from "@/components/RunsGrid";
 import { api, apiErrorMessage } from "@/lib/api/client";
-
-const runLabels: Record<string, string> = { DRAFT: "Черновик", QUEUED: "В очереди", RUNNING: "Выполняется", COMPLETED: "Завершён", FAILED: "Ошибка", CANCELLED: "Отменён" };
+import { modelLabel, selectorLabel } from "@/lib/science";
 
 export default async function RunsPage() {
-  let runs: Awaited<ReturnType<typeof api.runs>> = [];
+  let rows: RunGridRow[] = [];
   let error: string | null = null;
-  try { runs = await api.runs(); } catch (caught) { error = apiErrorMessage(caught); }
+  try {
+    const [runs, experiments] = await Promise.all([api.runs(), api.experiments()]);
+    const configurations = new Map(experiments.map(item => [item.id, item.configuration]));
+    const summaries = await Promise.all(runs.map(run => run.status === "COMPLETED" ? api.runSummary(run.id).catch(() => null) : null));
+    rows = runs.map((run, index) => {
+      const config = configurations.get(run.experiment_id);
+      return {
+        id: run.id, displayId: run.display_id,
+        model: config ? modelLabel[config.model] : `Конфигурация #${run.experiment_id}`,
+        selector: config ? selectorLabel[config.selector] : "—",
+        budget: config?.budget_kind === "pca_components" ? `${config.n_components} компонент PCA` : config ? `${config.k_original_features} исходных` : "—",
+        status: run.status, macroF1: run.metrics?.macro_f1_mean ?? null,
+        accuracy: run.metrics?.accuracy_mean ?? null,
+        folds: summaries[index]?.summary?.outer_fold_count ?? null,
+        created: run.created_at, finished: run.finished_at,
+      };
+    });
+  } catch (caught) { error = apiErrorMessage(caught); }
+  const running = rows.filter(row => row.status === "RUNNING" || row.status === "QUEUED").length;
   return <>
     <h1 className="page-heading">Запуски</h1>
-    <p className="page-question">Журнал исполнений отделён от реестра конфигураций. Состояние запуска не является научным результатом.</p>
+    <p className="page-question">Журнал реальных исполнений. Статус запуска и наличие научных метрик показаны отдельно; откройте Run ID для folds и происхождения результата.</p>
     {error && <Alert severity="warning" sx={{ mb: 2 }}>{error}</Alert>}
-    <section className="section-surface" aria-labelledby="runs-title">
-      <h2 id="runs-title" style={{ marginTop: 0, fontSize: 17 }}>Очередь и история</h2>
-      {runs.length === 0 ? <><p>Запусков пока нет.</p><p style={{ color: "#576778", fontSize: 13 }}>После создания конфигурации её можно поставить в очередь через API или CLI. На этапе 4A worker не обучает модели.</p></> :
-        <div style={{ overflowX: "auto" }}><table style={{ borderCollapse: "collapse", width: "100%", minWidth: 540, fontSize: 13 }}><thead><tr><th style={{ textAlign: "left", padding: 10 }}>Run ID</th><th style={{ textAlign: "left", padding: 10 }}>Конфигурация</th><th style={{ textAlign: "left", padding: 10 }}>Статус</th><th style={{ textAlign: "left", padding: 10 }}>Научный результат</th></tr></thead><tbody>
-          {runs.map(run => <tr key={run.id} style={{ borderTop: "1px solid #dce3ea" }}><td style={{ padding: 10, fontFamily: "monospace" }}>{run.display_id}</td><td style={{ padding: 10 }}>#{run.experiment_id}</td><td style={{ padding: 10 }}><Chip label={runLabels[run.status]} size="small" variant="outlined" /></td><td style={{ padding: 10 }}>Не рассчитано</td></tr>)}
-        </tbody></table></div>}
+    {running > 0 && <Alert severity="info" sx={{ mb: 2 }} role="status">В очереди или выполняется: {running}. Результат появится после завершения всех outer folds. Обновите страницу для нового состояния.</Alert>}
+    <section className="table-surface" aria-labelledby="runs-title">
+      <div className="table-heading"><h2 id="runs-title">Очередь и история</h2><span className="table-note">{rows.length} запусков · только сохранённые метрики</span></div>
+      {!error && rows.length === 0 && <p className="empty-copy">Запусков пока нет. Сохраните конфигурацию в разделе «Эксперименты» и поставьте её в очередь.</p>}
+      {rows.length > 0 && <RunsGrid rows={rows} />}
     </section>
   </>;
 }

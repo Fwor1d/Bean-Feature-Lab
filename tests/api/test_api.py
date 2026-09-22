@@ -44,6 +44,9 @@ def test_create_experiment_and_run_without_fake_metrics(api_client) -> None:
     folds = api_client.get("/api/v1/runs/1/folds")
     assert folds.status_code == 409
     assert folds.json()["error"]["code"] == "not_calculated"
+    detail = api_client.get("/api/v1/runs/1/detail")
+    assert detail.status_code == 409
+    assert detail.json()["error"]["code"] == "not_calculated"
     assert api_client.get("/api/v1/runs").json()[0]["display_id"] == "RUN-000001"
     assert api_client.post("/api/v1/runs/1/cancel").json()["status"] == "CANCELLED"
     conflict = api_client.post("/api/v1/runs/1/cancel")
@@ -67,3 +70,17 @@ def test_validation_and_not_found_contracts(api_client) -> None:
     assert invalid.status_code == 422
     assert invalid.json()["error"]["code"] == "invalid_configuration"
     assert api_client.get("/api/v1/runs/999").json()["error"]["code"] == "not_found"
+    assert api_client.get("/api/v1/datasets/999/manifest").json()["error"]["code"] == "not_found"
+
+
+def test_public_demo_is_read_only(monkeypatch, tmp_path) -> None:
+    from fastapi.testclient import TestClient
+
+    from beanfeature_api.main import create_app
+
+    monkeypatch.setenv("BEANFEATURE_DEMO_READ_ONLY", "1")
+    with TestClient(create_app(f"sqlite:///{tmp_path / 'demo.sqlite'}")) as client:
+        assert client.get("/docs").status_code == 200
+        response = client.post("/api/v1/experiments", json={"name": "Blocked"})
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "demo_read_only"

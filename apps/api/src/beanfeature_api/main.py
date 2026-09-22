@@ -59,6 +59,14 @@ def create_app(database_url: str | None = None) -> FastAPI:
         logger.info("api.stop")
 
     application = FastAPI(title="BeanFeature Lab API", version="0.1.0", lifespan=lifespan)
+    demo_read_only = os.getenv("BEANFEATURE_DEMO_READ_ONLY") == "1"
+
+    @application.middleware("http")
+    async def public_demo_guard(request: Request, call_next):
+        if demo_read_only and request.method not in {"GET", "HEAD", "OPTIONS"}:
+            return error_response("demo_read_only", "Public presentation is read-only", 403)
+        return await call_next(request)
+
     origins = os.getenv(
         "BEANFEATURE_CORS_ORIGINS",
         "http://localhost:3000,http://127.0.0.1:3000",
@@ -112,6 +120,10 @@ def create_app(database_url: str | None = None) -> FastAPI:
     def datasets(service: Service) -> list[DatasetResponse]:
         return [DatasetResponse.model_validate(item) for item in service.list_datasets()]
 
+    @application.get("/api/v1/datasets/{dataset_id}/manifest")
+    def dataset_manifest(dataset_id: int, service: Service):
+        return service.get_dataset_manifest(dataset_id)
+
     @application.get("/api/v1/experiments", response_model=list[ExperimentResponse])
     def experiments(service: Service) -> list[ExperimentResponse]:
         return [ExperimentResponse.from_domain(item) for item in service.list_experiments()]
@@ -156,6 +168,13 @@ def create_app(database_url: str | None = None) -> FastAPI:
             else "NOT_CALCULATED",
             summary=run.summary if run.status.value == "COMPLETED" else None,
         )
+
+    @application.get("/api/v1/runs/{run_id}/detail")
+    def run_detail(run_id: int, service: Service):
+        result = service.get_run_detail(run_id)
+        if result is None:
+            return error_response("not_calculated", "Scientific result is not available", 409)
+        return result
 
     @application.get("/api/v1/runs/{run_id}/folds", response_model=list[FoldResultResponse])
     def run_folds(run_id: int, service: Service):

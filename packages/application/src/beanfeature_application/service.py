@@ -165,6 +165,14 @@ class ApplicationService:
     def list_datasets(self) -> list[dict[str, object]]:
         return self.datasets.list() if self.datasets else []
 
+    def get_dataset_manifest(self, dataset_id: int) -> dict[str, object]:
+        if not any(item["id"] == dataset_id for item in self.list_datasets()):
+            raise NotFoundError("Dataset not found")
+        if not self.dataset_store:
+            raise RuntimeError("Dataset infrastructure is unavailable")
+        _, manifest = self.dataset_store.load()
+        return manifest
+
     def recover_interrupted_runs(self) -> int:
         return self.runs.recover_running()
 
@@ -264,6 +272,23 @@ class ApplicationService:
         if not isinstance(payload, dict):
             raise ValueError("Invalid scientific result artifact")
         return payload
+
+    def get_run_detail(self, run_id: int) -> dict[str, object] | None:
+        """Read verified provenance without transferring full predictions to the overview."""
+        run = self.get_run(run_id)
+        payload = self.get_run_result(run_id)
+        if payload is None:
+            return None
+        return {
+            "run_id": run.display_id,
+            "configuration": payload["configuration"],
+            "dataset_manifest": payload["dataset_manifest"],
+            "provenance": payload["provenance"],
+            "fingerprint": payload["fingerprint"],
+            "result_artifact": run.result_artifact,
+            "result_sha256": run.result_sha256,
+            "artifact_verified": True,
+        }
 
     def feature_budget_series(self) -> list[dict[str, object]]:
         points = []

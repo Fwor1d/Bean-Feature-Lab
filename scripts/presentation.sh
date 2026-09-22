@@ -15,11 +15,13 @@ WEB_TUNNEL_LOG="$LOG_DIR/web-tunnel.log"
 WORKER_LOG="$LOG_DIR/worker.log"
 
 cleanup() {
+    trap - INT TERM EXIT
     echo
     echo "Stopping BeanFeature Lab..."
 
     [ -n "$API_PID" ] && kill "$API_PID" 2>/dev/null || true
     [ -n "$WORKER_PID" ] && kill "$WORKER_PID" 2>/dev/null || true
+    [ -n "$WEB_PID" ] && pkill -P "$WEB_PID" 2>/dev/null || true
     [ -n "$WEB_PID" ] && kill "$WEB_PID" 2>/dev/null || true
     [ -n "$API_TUNNEL_PID" ] && kill "$API_TUNNEL_PID" 2>/dev/null || true
     [ -n "$WEB_TUNNEL_PID" ] && kill "$WEB_TUNNEL_PID" 2>/dev/null || true
@@ -27,22 +29,20 @@ cleanup() {
 
 trap cleanup INT TERM EXIT
 
-echo "Stopping old BeanFeature Lab processes..."
-
-pkill -f "uvicorn beanfeature_api.main" 2>/dev/null || true
-pkill -f "beanfeature-worker" 2>/dev/null || true
-pkill -f "next dev" 2>/dev/null || true
-pkill -f "cloudflared tunnel.*127.0.0.1:8000" 2>/dev/null || true
-pkill -f "cloudflared tunnel.*127.0.0.1:3000" 2>/dev/null || true
-
-sleep 1
+for port in 8000 3000; do
+    if lsof -nP -iTCP:"$port" -sTCP:LISTEN -t | grep -q .; then
+        echo "ERROR: Local port $port is occupied. Stop that process before presentation."
+        exit 1
+    fi
+done
 
 echo "Applying migrations..."
 .venv/bin/alembic upgrade head
 
 echo "Starting API..."
 
-BEANFEATURE_CORS_ORIGINS="*" \
+BEANFEATURE_CORS_ORIGINS="http://127.0.0.1:3000,http://localhost:3000" \
+BEANFEATURE_DEMO_READ_ONLY=1 \
 .venv/bin/uvicorn beanfeature_api.main:app \
     --host 127.0.0.1 \
     --port 8000 \
@@ -88,12 +88,18 @@ fi
 
 echo "API: $API_URL"
 
-echo "Starting frontend..."
+echo "Building frontend..."
 
 cd "$ROOT/apps/web"
 
-NEXT_PUBLIC_API_BASE_URL="$API_URL" \
-npm run dev -- --hostname 127.0.0.1 \
+BEANFEATURE_INTERNAL_API_BASE_URL="http://127.0.0.1:8000" \
+NEXT_PUBLIC_DEMO_READ_ONLY=1 \
+npm run build > "$WEB_LOG" 2>&1
+
+echo "Starting frontend..."
+
+BEANFEATURE_INTERNAL_API_BASE_URL="http://127.0.0.1:8000" \
+npm run start -- --hostname 127.0.0.1 \
     > "$WEB_LOG" 2>&1 &
 
 WEB_PID=$!
