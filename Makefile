@@ -35,7 +35,10 @@ build:
 migrate:
 	.venv/bin/alembic upgrade head
 
-.PHONY: presentation
+.PHONY: presentation presentation-quick
 
 presentation:
+	./scripts/presentation-named.sh
+
+presentation-quick:
 	./scripts/presentation.sh

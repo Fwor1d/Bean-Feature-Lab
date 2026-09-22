@@ -11,7 +11,7 @@ export class ApiError extends Error {
 
 const baseUrl = typeof window === "undefined"
   ? (process.env.BEANFEATURE_INTERNAL_API_BASE_URL ?? "http://127.0.0.1:8000")
-  : "/api/backend";
+  : (process.env.NEXT_PUBLIC_API_BASE_URL || "/api/backend");
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;

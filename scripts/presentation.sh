@@ -21,7 +21,6 @@ cleanup() {
 
     [ -n "$API_PID" ] && kill "$API_PID" 2>/dev/null || true
     [ -n "$WORKER_PID" ] && kill "$WORKER_PID" 2>/dev/null || true
-    [ -n "$WEB_PID" ] && pkill -P "$WEB_PID" 2>/dev/null || true
     [ -n "$WEB_PID" ] && kill "$WEB_PID" 2>/dev/null || true
     [ -n "$API_TUNNEL_PID" ] && kill "$API_TUNNEL_PID" 2>/dev/null || true
     [ -n "$WEB_TUNNEL_PID" ] && kill "$WEB_TUNNEL_PID" 2>/dev/null || true
@@ -93,13 +92,15 @@ echo "Building frontend..."
 cd "$ROOT/apps/web"
 
 BEANFEATURE_INTERNAL_API_BASE_URL="http://127.0.0.1:8000" \
+NEXT_PUBLIC_API_BASE_URL="" \
 NEXT_PUBLIC_DEMO_READ_ONLY=1 \
 npm run build > "$WEB_LOG" 2>&1
+printf 'quick\n' > "$ROOT/apps/web/.next/beanfeature-named-build.sha256"
 
 echo "Starting frontend..."
 
 BEANFEATURE_INTERNAL_API_BASE_URL="http://127.0.0.1:8000" \
-npm run start -- --hostname 127.0.0.1 \
+node "$ROOT/apps/web/node_modules/next/dist/bin/next" start --hostname 127.0.0.1 --port 3000 \
     > "$WEB_LOG" 2>&1 &
 
 WEB_PID=$!
