@@ -1,10 +1,15 @@
+import pandas as pd
 import pytest
+from sklearn.datasets import make_classification
 
 from beanfeature_application.contracts import ExperimentConfig
 from beanfeature_application.service import ApplicationService
 from beanfeature_infrastructure.bootstrap import create_container
 from beanfeature_infrastructure.database import Base
+from beanfeature_infrastructure.files import ArtifactStore
+from beanfeature_infrastructure.repositories import SQLiteRunRepository
 from beanfeature_research.contracts import ModelId, SelectorId
+from beanfeature_research.dataset import ValidatedDataset
 
 
 def test_pca_cannot_be_original_budget(tmp_path) -> None:
@@ -42,3 +47,89 @@ def test_pca_cannot_be_original_budget(tmp_path) -> None:
                 required_raw_feature_count=4,
             ),
         )
+
+
+def test_completed_requires_verified_artifact_and_failure_has_no_metrics(tmp_path) -> None:
+    container = create_container(f"sqlite:///{tmp_path / 'test.sqlite'}")
+    Base.metadata.create_all(container.metadata.engine)
+    service = container.service
+    experiment = service.create_experiment(
+        "invariant",
+        ExperimentConfig(
+            ModelId.LOGISTIC_REGRESSION,
+            SelectorId.MUTUAL_INFORMATION,
+            "original_features",
+            k_original_features=4,
+        ),
+    )
+    queued = service.create_run(experiment.id)
+    assert queued.summary is None
+    assert queued.result_artifact is None
+    running = service.runs.claim_next()
+    assert running and running.status.value == "RUNNING"
+    with pytest.raises(FileNotFoundError):
+        service.runs.complete(
+            queued.id,
+            "missing/result.json",
+            "0" * 64,
+            {"macro_f1_mean": 0.0},
+            "hash",
+            "fingerprint",
+        )
+    failed = service.runs.fail(queued.id, "intentional test failure")
+    assert failed and failed.status.value == "FAILED"
+    assert failed.summary is None
+    assert failed.result_artifact is None
+    assert service.get_run_result(queued.id) is None
+
+
+def test_synthetic_end_to_end_persistence_roundtrip(tmp_path) -> None:
+    features, target = make_classification(
+        n_samples=140,
+        n_features=16,
+        n_informative=10,
+        n_redundant=0,
+        n_classes=7,
+        n_clusters_per_class=1,
+        random_state=21,
+    )
+    dataset = ValidatedDataset(
+        pd.DataFrame(features, columns=[f"feature_{index}" for index in range(16)]),
+        target,
+        "synthetic-test-only",
+    )
+
+    class TestDatasetStore:
+        def load(self):
+            return dataset, {
+                "dataset_version": "synthetic-test-only",
+                "arff_sha256": "synthetic-test-only",
+            }
+
+    container = create_container(f"sqlite:///{tmp_path / 'test.sqlite'}")
+    Base.metadata.create_all(container.metadata.engine)
+    service = container.service
+    artifacts = ArtifactStore(tmp_path / "artifacts")
+    service.artifacts = artifacts
+    service.runs.artifacts = artifacts
+    service.dataset_store = TestDatasetStore()
+    experiment = service.create_experiment(
+        "synthetic integration test",
+        ExperimentConfig(
+            ModelId.LOGISTIC_REGRESSION,
+            SelectorId.MUTUAL_INFORMATION,
+            "original_features",
+            k_original_features=4,
+            dataset_version="synthetic-test-only",
+            evaluation_mode="smoke",
+        ),
+    )
+    queued = service.create_run(experiment.id)
+    completed = service.process_next_run()
+    assert completed and completed.status.value == "COMPLETED"
+    reloaded = SQLiteRunRepository(service.runs.sessions, artifacts).get(queued.id)
+    assert reloaded and reloaded.summary == completed.summary
+    assert reloaded.result_sha256
+    result = service.get_run_result(queued.id)
+    assert result and len(result["folds"]) == 2
+    assert result["summary"]["macro_f1_mean"] == completed.summary["macro_f1_mean"]

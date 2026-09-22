@@ -10,7 +10,13 @@ from beanfeature_research.contracts import (
     PCARepresentation,
     SelectorId,
 )
-from beanfeature_research.engine import EngineCondition, preset_search_space, run_nested_cv
+from beanfeature_research.engine import (
+    EngineCondition,
+    NestedResult,
+    paired_comparison,
+    preset_search_space,
+    run_nested_cv,
+)
 
 from .contracts import (
     DatasetRepository,
@@ -55,6 +61,8 @@ class ApplicationService:
         clean_name = name.strip()
         if not clean_name or len(clean_name) > 120:
             raise ValueError("Experiment name must contain 1–120 characters")
+        if configuration.budget_kind not in ("original_features", "pca_components"):
+            raise ValueError("Unknown feature-budget representation")
         if configuration.budget_kind == "original_features":
             if (
                 configuration.selector is SelectorId.PCA
@@ -86,6 +94,13 @@ class ApplicationService:
             )
         if configuration.evaluation_mode not in ("protocol", "smoke"):
             raise ValueError("Unknown evaluation mode")
+        if not 0 <= configuration.seed <= 4_294_967_295:
+            raise ValueError("Seed must be a valid unsigned 32-bit integer")
+        if configuration.selector in (
+            SelectorId.CORRELATION_PRUNING,
+            SelectorId.SEQUENTIAL_FEATURE_SELECTION,
+        ):
+            raise ValueError("Extended selector is not implemented in Core")
         frozen_space = preset_search_space(
             configuration.model, smoke=configuration.evaluation_mode == "smoke"
         )
@@ -238,7 +253,12 @@ class ApplicationService:
 
     def get_run_result(self, run_id: int) -> dict[str, object] | None:
         run = self.get_run(run_id)
-        if not run.result_artifact or not run.result_sha256 or not self.artifacts:
+        if (
+            run.status.value != "COMPLETED"
+            or not run.result_artifact
+            or not run.result_sha256
+            or not self.artifacts
+        ):
             return None
         payload = self.artifacts.read_json(run.result_artifact, run.result_sha256)
         if not isinstance(payload, dict):
@@ -269,3 +289,47 @@ class ApplicationService:
                 }
             )
         return points
+
+    def compare_runs(
+        self, compact_run_id: int, baseline_run_id: int, *, persist: bool = False
+    ) -> dict[str, object]:
+        """Compare matching outer folds without a sufficiency claim."""
+        compact_run = self.get_run(compact_run_id)
+        baseline_run = self.get_run(baseline_run_id)
+        if compact_run.dataset_hash != baseline_run.dataset_hash or not compact_run.dataset_hash:
+            raise ValueError("Paired runs require the same validated dataset hash")
+        compact_payload = self.get_run_result(compact_run_id)
+        baseline_payload = self.get_run_result(baseline_run_id)
+        if not compact_payload or not baseline_payload:
+            raise ConflictError("Both runs must be completed before paired comparison")
+        compact_config = self.get_experiment(compact_run.experiment_id).configuration
+        baseline_config = self.get_experiment(baseline_run.experiment_id).configuration
+        if (
+            compact_config.seed != baseline_config.seed
+            or compact_config.search_space != baseline_config.search_space
+            or compact_config.model != baseline_config.model
+            or baseline_config.selector is not SelectorId.NONE
+        ):
+            raise ValueError(
+                "Paired runs need matching seed/model/search space and a no-selector baseline"
+            )
+        compact = NestedResult(
+            compact_payload["folds"], compact_payload["summary"], compact_payload["splits"]
+        )
+        baseline = NestedResult(
+            baseline_payload["folds"], baseline_payload["summary"], baseline_payload["splits"]
+        )
+        comparison = paired_comparison(compact, baseline)
+        payload = {
+            "compact_run_id": compact_run.display_id,
+            "baseline_run_id": baseline_run.display_id,
+            "dataset_hash": compact_run.dataset_hash,
+            "comparison": comparison,
+        }
+        if not persist:
+            return payload
+        if not self.artifacts:
+            raise RuntimeError("Scientific artifact store is unavailable")
+        path = f"{compact_run.display_id}/paired-vs-{baseline_run.display_id}.json"
+        digest = self.artifacts.write_json(path, payload)
+        return {**payload, "artifact_relative_path": path, "artifact_sha256": digest}

@@ -1,36 +1,45 @@
 # BeanFeature Lab
 
-BeanFeature Lab is a local research workbench for studying how the number of original Dry Bean morphological features affects multiclass classification. Stage 4A provides a working application foundation, **not scientific results**. The sole planned scientific source for the next stage is UCI Dry Bean Dataset, ID 602; it has not been downloaded here.
+BeanFeature Lab is a local research workbench for measuring how the number of original Dry Bean morphological features affects multiclass classification. The Stage 4B scientific engine runs outside HTTP requests; the Stage 4A interface remains a foundation shell and is **not yet connected to result views**.
 
 ## Architecture
 
-`apps/web` is the Next.js App Router interface. `apps/api` is a thin FastAPI adapter. `apps/worker` is one local worker that maintains a heartbeat and sees queued jobs, but deliberately does not execute ML. `tools/cli` uses the same application service as API and worker. `packages/research` owns independent scientific contracts; `packages/application` owns use cases and repository ports; `packages/infrastructure` implements SQLite, safe artifact paths and environment metadata. See [ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) and [EXPERIMENT_PROTOCOL.md](docs/research/EXPERIMENT_PROTOCOL.md).
+`apps/web` is the Next.js frontend; `apps/api` exposes typed FastAPI contracts; `apps/worker` processes one queued scientific run at a time. `tools/cli` and the worker use the same `packages/application` use cases. `packages/research` owns leakage-safe scikit-learn pipelines and nested CV, while `packages/infrastructure` owns official UCI acquisition, SQLite and hash-verified artifact storage. See [ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) and [EXPERIMENT_PROTOCOL.md](docs/research/EXPERIMENT_PROTOCOL.md).
 
-## Prerequisites and setup
+## Local setup
 
-- macOS Apple Silicon, Node.js 24 LTS with npm, Python 3.11.
-- From the repository root: `make setup` creates `.venv`, installs only foundation Python packages and frontend packages, then applies the Alembic migration. No global Python installation is used.
-- Defaults work without a `.env` file: API on `127.0.0.1:8000`, web on `127.0.0.1:3000`, SQLite at `storage/sqlite/beanfeature.sqlite`. Root `.env.example` and `apps/web/.env.example` document optional environment variables. Export them in the shell when overriding defaults. Never commit a real `.env`.
+- macOS Apple Silicon, Node.js 24 LTS, Python 3.11. LightGBM on macOS requires Homebrew `libomp`.
+- `make setup` creates project-local `.venv`, installs Python/frontend dependencies and applies migrations. It does not install into the global Python environment.
+- `make migrate` applies subsequent Alembic migrations. Defaults are SQLite at `storage/sqlite/beanfeature.sqlite`, API at `127.0.0.1:8000`, and web at `127.0.0.1:3000`. Optional overrides are described in `.env.example`; do not commit a real `.env`.
+- `make api`, `make worker`, and `make web` run in separate terminals. `make test`, `make lint`, `make format`, `make typecheck`, and `make build` cover the developer workflow.
 
-Use separate terminals:
+## Reproducible scientific execution
+
+Only the official UCI Machine Learning Repository Dry Bean Dataset (ID 602) is accepted. Download and validate it from the repository root:
 
 ```sh
-make api
-make worker
-make web
+.venv/bin/beanfeature dataset fetch --accept-official-schema
+.venv/bin/beanfeature dataset validate --accept-official-schema
 ```
 
-Open `http://127.0.0.1:3000/feature-budget`. The frontend reads the real FastAPI metadata and collections. It shows an explicit unavailable state if the API cannot be reached.
+The acknowledgement records literal names from the official ARFF: `DERMASON`, `AspectRation`, and `roundness`; they differ from some prose in `PRODUCT.md` but are never silently renamed. Validation checks the pinned official ZIP and ARFF SHA-256 values, 13,611 rows, 16 numeric predictors, seven classes, no missing/non-finite values, exact attribute order, and target separation. The raw archive/ARFF and processed manifest live under `data/`; none is committed.
 
-Other developer commands: `make test`, `make lint`, `make format`, `make typecheck`, `make build`, `make migrate`. Run `.venv/bin/beanfeature system info`, `.venv/bin/beanfeature experiments list`, `.venv/bin/beanfeature runs list`, or `--help` for CLI operations. To inspect API routes, open `http://127.0.0.1:8000/docs`.
+Create a short **integration smoke** run (two outer folds, two inner folds; not a final scientific estimate):
 
-## Current behavior
+```sh
+.venv/bin/beanfeature experiments create "LR MI smoke k=4" --model logistic_regression --selector mutual_information --k-original-features 4 --smoke
+.venv/bin/beanfeature runs create EXPERIMENT_ID
+.venv/bin/beanfeature runs process-next
+.venv/bin/beanfeature runs show RUN_ID
+.venv/bin/beanfeature runs result RUN_ID
+```
 
-- Routes: `/`, `/feature-budget`, `/experiments`, `/runs`, `/features`, `/compare`, `/classifier`, `/settings`. The Feature Budget figure is a real empty Plotly figure; no curve or scientific metric is fabricated. The experiments screen can save a configuration, while dataset validation and ML execution are absent.
-- API: `GET /health`, `/api/v1/system/info`, `/api/v1/projects`, `/api/v1/datasets`, `/api/v1/experiments`, `/api/v1/runs`; experiment/run detail, experiment creation, run queueing and cancellation are also available. Errors use `{ "error": { "code", "message" } }`.
-- SQLite migration creates `experiments`, `runs`, and `worker_heartbeat`. An internal autoincrement key yields atomic display IDs such as `RUN-000001`; no `MAX(id)+1` sequence. New runs remain `QUEUED` and have `metrics: null`, `result_state: NOT_CALCULATED`. The worker never marks them complete.
-- `data/raw`, `data/processed`, `storage/sqlite`, `artifacts/runs`, `artifacts/models` are separate runtime locations. Runtime files are ignored by Git.
+Omit `--smoke` for the approved 5×3 repeated-stratified outer / 4-fold stratified inner protocol. The same seed and dataset yield identical outer split identifiers across comparable conditions. `beanfeature-worker` consumes queued runs sequentially and supports clean shutdown; an interrupted running run becomes `FAILED` on restart and can be reproduced as a new run. To enqueue the entire 86-condition Core MI matrix, first inspect the compute budget with `.venv/bin/beanfeature core enqueue-mi`; an explicit `--confirm-compute` is required to enqueue it. No expensive matrix is launched automatically.
+
+Each completed run persists fold-level predictions, confusion matrices, selected original features or PCA metadata, timings, and split identifiers in `artifacts/runs/RUN-******/result.json`; SQLite stores status, configuration, summary, hashes, and artifact reference. New, failed and cancelled runs have no scientific metrics. The API provides `/api/v1/runs/{id}/summary`, `/folds`, `/stability`, and `/api/v1/feature-budget/series` in addition to foundation endpoints; `/docs` lists all routes.
+
+For two completed, matched full-protocol runs, `.venv/bin/beanfeature runs compare COMPACT_RUN_ID BASELINE_RUN_ID` saves a separate hash-identified artifact with the 15 paired fold losses. The baseline must be the same model on all 16 original features without a selector. `GET /api/v1/runs/{id}/paired-comparison/{baseline_id}` computes the same read-only comparison; neither path declares a sufficient `k`.
 
 ## Scientific integrity boundary
 
-The current code does **not** download or preprocess the UCI dataset, train models, select features, run nested CV, calculate Macro-F1, report latency, or register classifier models. `k_original_features` and `n_components` are distinct contracts. PCA components cannot be reported as the number of physical measurements. Run execution state is distinct from scientific result state. The scientific protocol and approved Instrument Workstation UI are defined in [PRODUCT.md](PRODUCT.md) and [DESIGN.md](DESIGN.md); they must not be inferred from empty UI fields.
+Scaling, selection/PCA, hyperparameter search and fitting occur inside the relevant CV training folds. PCA components are never counted as physically measured original features. Macro-F1, accuracy, recall, confusion matrices and optional multiclass ROC AUC come from real outer-test predictions only; unavailable metrics remain `null`. Resource timing measures the full pipeline; peak memory is explicitly not calculated. The predeclared sufficient-k margin is 0.01 Macro-F1, but no sufficient-k claim is made until an uncertainty-interval method appropriate for dependent repeated-CV folds is approved. The UI result integration, final classifier artifact, Extended selectors, Pareto analysis and reporting are later stages.

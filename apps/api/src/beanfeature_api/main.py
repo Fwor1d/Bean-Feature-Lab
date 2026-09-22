@@ -151,8 +151,10 @@ def create_app(database_url: str | None = None) -> FastAPI:
         return RunSummaryResponse(
             run_id=run.display_id,
             status=run.status,
-            result_state="CALCULATED" if run.summary else "NOT_CALCULATED",
-            summary=run.summary,
+            result_state="CALCULATED"
+            if run.status.value == "COMPLETED" and run.summary
+            else "NOT_CALCULATED",
+            summary=run.summary if run.status.value == "COMPLETED" else None,
         )
 
     @application.get("/api/v1/runs/{run_id}/folds", response_model=list[FoldResultResponse])
@@ -171,6 +173,10 @@ def create_app(database_url: str | None = None) -> FastAPI:
             "run_id": result["run_id"],
             "feature_stability": result["summary"].get("feature_stability"),
         }
+
+    @application.get("/api/v1/runs/{run_id}/paired-comparison/{baseline_run_id}")
+    def run_paired_comparison(run_id: int, baseline_run_id: int, service: Service):
+        return service.compare_runs(run_id, baseline_run_id)
 
     @application.get(
         "/api/v1/feature-budget/series", response_model=list[FeatureBudgetPointResponse]

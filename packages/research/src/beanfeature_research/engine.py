@@ -32,6 +32,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from .contracts import ModelId, OriginalFeatureBudget, PCARepresentation, SelectorId
+from .dataset import TARGET
 
 CV_PROTOCOL_VERSION = "dry-bean-nested-5x3-4-v1"
 SMOKE_PROTOCOL_VERSION = "integration-smoke-2x1-2-v1"
@@ -62,7 +63,7 @@ class L1TopK(BaseEstimator, TransformerMixin):
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "L1TopK":
         self.estimator_ = LogisticRegression(
-            penalty="l1", solver="saga", C=self.C, max_iter=1200, random_state=self.seed
+            l1_ratio=1.0, solver="saga", C=self.C, max_iter=1200, random_state=self.seed
         ).fit(X, y)
         importance = np.max(np.abs(self.estimator_.coef_), axis=0)
         self.observed_nonzero_count_ = int(np.count_nonzero(importance))
@@ -93,6 +94,8 @@ class EngineCondition:
     def __post_init__(self) -> None:
         if self.evaluation_mode not in ("protocol", "smoke"):
             raise ValueError("Unknown evaluation mode")
+        if self.budget_kind not in ("original_features", "pca_components"):
+            raise ValueError("Unknown feature-budget representation")
         if self.budget_kind == "pca_components":
             if self.selector is not SelectorId.PCA or self.k_original_features is not None:
                 raise ValueError("PCA cannot be an original-feature budget")
@@ -126,7 +129,7 @@ def _estimator(model: ModelId, seed: int) -> BaseEstimator:
     if model is ModelId.LOGISTIC_REGRESSION:
         return LogisticRegression(max_iter=800, random_state=seed)
     if model is ModelId.SVM_RBF:
-        return SVC(kernel="rbf", probability=False, random_state=seed)
+        return SVC(kernel="rbf", random_state=seed)
     if model is ModelId.RANDOM_FOREST:
         return RandomForestClassifier(
             n_estimators=120, min_samples_leaf=2, n_jobs=1, random_state=seed
@@ -237,12 +240,15 @@ def run_nested_cv(
 ) -> NestedResult:
     if len(X) != len(y) or len(X.columns) != 16 or len(set(X.columns)) != 16:
         raise ValueError("Expected 16 distinct numeric predictors aligned with target")
+    if TARGET in X.columns:
+        raise ValueError("Target column cannot appear among predictors")
     if any(not pd.api.types.is_numeric_dtype(X[column]) for column in X.columns):
         raise ValueError("Non-numeric predictor")
-    labels = sorted(set(y))
+    labels = sorted({str(label) for label in y})
     if len(labels) < 2:
         raise ValueError("At least two target classes required")
-    encoded = np.array([labels.index(label) for label in y], dtype=np.int64)
+    label_indices = {label: index for index, label in enumerate(labels)}
+    encoded = np.array([label_indices[str(label)] for label in y], dtype=np.int64)
     inner_folds = 4 if condition.evaluation_mode == "protocol" else 2
     split_pairs = outer_splits(encoded, condition.seed, condition.evaluation_mode)
     folds: list[dict[str, object]] = []
@@ -400,8 +406,7 @@ def run_nested_cv(
             for i in range(0, len(scores), 5 if condition.evaluation_mode == "protocol" else 2)
         ],
         "dispersion_note": (
-            "Repeated-CV folds overlap; fold SD is descriptive, "
-            "not an independent-sample CI"
+            "Repeated-CV folds overlap; fold SD is descriptive, not an independent-sample CI"
         ),
         "feature_stability": stability,
         "sufficient_k": None,
@@ -419,6 +424,11 @@ def paired_comparison(compact: NestedResult, baseline: NestedResult) -> dict[str
         raise ValueError("Smoke results cannot support sufficient-k analysis")
     if compact.summary["model"] != baseline.summary["model"]:
         raise ValueError("Paired comparison requires the same model")
+    if (
+        compact.summary["budget_kind"] != "original_features"
+        or not 1 <= compact.summary["k_original_features"] < 16
+    ):
+        raise ValueError("Compact run must use fewer than 16 original features")
     if (
         baseline.summary["k_original_features"] != 16
         or baseline.summary["budget_kind"] != "original_features"

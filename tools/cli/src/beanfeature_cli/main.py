@@ -152,6 +152,14 @@ def budget_series() -> None:
     )
 
 
+@run_app.command("compare")
+def compare_runs(compact_run_id: int, baseline_run_id: int) -> None:
+    comparison = create_container().service.compare_runs(
+        compact_run_id, baseline_run_id, persist=True
+    )
+    typer.echo(json.dumps(comparison, ensure_ascii=False, indent=2))
+
+
 @core_app.command("enqueue-mi")
 def enqueue_core_mi(
     confirm_compute: bool = typer.Option(False, help="Queue 86 full-protocol conditions"),

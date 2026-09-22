@@ -54,7 +54,7 @@ class ExperimentConfigDTO(BaseModel):
     n_components: int | None = Field(default=None, ge=1, le=16)
     required_raw_feature_count: int | None = None
     dataset_version: str | None = Field(default=None, max_length=128)
-    seed: int = 42
+    seed: int = Field(default=42, ge=0, le=4_294_967_295)
     evaluation_mode: Literal["protocol", "smoke"] = "protocol"
     search_space: dict[str, list[object]] = Field(default_factory=dict)
 

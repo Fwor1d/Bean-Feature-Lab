@@ -23,14 +23,15 @@ def create_container(database_url: str | None = None) -> Container:
     metadata = EnvironmentMetadata(engine, sessions)
     dataset_store = UCIDatasetStore()
     datasets = SQLiteDatasetRepository(sessions)
+    artifacts = ArtifactStore(Path("artifacts/runs"))
     return Container(
         service=ApplicationService(
             SQLiteExperimentRepository(sessions),
-            SQLiteRunRepository(sessions),
+            SQLiteRunRepository(sessions, artifacts),
             metadata,
             datasets=datasets,
             dataset_store=dataset_store,
-            artifacts=ArtifactStore(Path("artifacts/runs")),
+            artifacts=artifacts,
         ),
         metadata=metadata,
         heartbeat=SQLiteWorkerHeartbeat(sessions),

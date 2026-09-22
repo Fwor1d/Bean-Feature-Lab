@@ -1,5 +1,7 @@
 from dataclasses import asdict
 from datetime import UTC, datetime
+from math import isfinite
+from statistics import mean
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import sessionmaker
@@ -8,6 +10,7 @@ from beanfeature_application.contracts import Experiment, ExperimentConfig, Run
 from beanfeature_research.contracts import ModelId, RunStatus, SelectorId
 
 from .database import DatasetVersionRow, ExperimentRow, RunEventRow, RunRow, utc_now
+from .files import ArtifactStore
 
 
 def _aware(value):  # type: ignore[no-untyped-def]
@@ -76,8 +79,9 @@ class SQLiteExperimentRepository:
 
 
 class SQLiteRunRepository:
-    def __init__(self, sessions: sessionmaker) -> None:
+    def __init__(self, sessions: sessionmaker, artifacts: ArtifactStore) -> None:
         self.sessions = sessions
+        self.artifacts = artifacts
 
     def create(self, experiment_id: int) -> Run:
         with self.sessions.begin() as session:
@@ -141,6 +145,29 @@ class SQLiteRunRepository:
         dataset_hash: str,
         fingerprint: str,
     ) -> Run | None:
+        payload = self.artifacts.read_json(artifact, artifact_hash)
+        if not isinstance(payload, dict) or payload.get("run_id") != f"RUN-{run_id:06d}":
+            raise ValueError("Result artifact does not belong to this run")
+        if (
+            payload.get("summary") != summary
+            or payload.get("dataset_manifest", {}).get("arff_sha256") != dataset_hash
+            or payload.get("fingerprint") != fingerprint
+        ):
+            raise ValueError("Result artifact and completion metadata differ")
+        expected = 15 if summary.get("evaluation_mode") == "protocol" else 2
+        folds = payload.get("folds")
+        if not isinstance(folds, list) or len(folds) != expected:
+            raise ValueError("Scientific result must contain every outer fold")
+        scores = [fold.get("macro_f1") for fold in folds if isinstance(fold, dict)]
+        if len(scores) != expected or any(
+            not isinstance(score, (int, float)) or not isfinite(score) for score in scores
+        ):
+            raise ValueError("Scientific result contains invalid fold metrics")
+        if (
+            not isfinite(float(summary.get("macro_f1_mean", float("nan"))))
+            or not abs(mean(scores) - float(summary["macro_f1_mean"])) < 1e-12
+        ):
+            raise ValueError("Summary does not match completed outer folds")
         with self.sessions.begin() as session:
             changed = session.execute(
                 update(RunRow)
@@ -170,6 +197,11 @@ class SQLiteRunRepository:
                     finished_at=utc_now(),
                     error=error[:1000],
                     error_detail_artifact=detail_artifact,
+                    result_artifact=None,
+                    result_sha256=None,
+                    summary=None,
+                    dataset_hash=None,
+                    fingerprint=None,
                 )
             )
             if changed.rowcount != 1:
@@ -190,6 +222,11 @@ class SQLiteRunRepository:
                         status="FAILED",
                         finished_at=utc_now(),
                         error="Worker interrupted; create a new run to restart",
+                        result_artifact=None,
+                        result_sha256=None,
+                        summary=None,
+                        dataset_hash=None,
+                        fingerprint=None,
                     )
                 )
                 session.add(

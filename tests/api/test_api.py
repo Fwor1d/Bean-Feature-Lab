@@ -38,6 +38,12 @@ def test_create_experiment_and_run_without_fake_metrics(api_client) -> None:
     assert run.json()["status"] == "QUEUED"
     assert run.json()["metrics"] is None
     assert run.json()["result_state"] == "NOT_CALCULATED"
+    summary = api_client.get("/api/v1/runs/1/summary")
+    assert summary.json()["result_state"] == "NOT_CALCULATED"
+    assert summary.json()["summary"] is None
+    folds = api_client.get("/api/v1/runs/1/folds")
+    assert folds.status_code == 409
+    assert folds.json()["error"]["code"] == "not_calculated"
     assert api_client.get("/api/v1/runs").json()[0]["display_id"] == "RUN-000001"
     assert api_client.post("/api/v1/runs/1/cancel").json()["status"] == "CANCELLED"
     conflict = api_client.post("/api/v1/runs/1/cancel")
