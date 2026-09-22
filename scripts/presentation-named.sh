@@ -91,14 +91,19 @@ build_fingerprint() {
 
 FINGERPRINT="$(build_fingerprint)"
 SAVED_FINGERPRINT=""
+SAVED_BUILD_ID=""
 if [ -f apps/web/.next/beanfeature-named-build.sha256 ]; then
-    SAVED_FINGERPRINT="$(<apps/web/.next/beanfeature-named-build.sha256)"
+    read -r SAVED_FINGERPRINT SAVED_BUILD_ID < apps/web/.next/beanfeature-named-build.sha256
+fi
+CURRENT_BUILD_ID=""
+if [ -f apps/web/.next/BUILD_ID ]; then
+    CURRENT_BUILD_ID="$(<apps/web/.next/BUILD_ID)"
 fi
 
 echo "Applying database migrations..."
 .venv/bin/alembic upgrade head
 
-if [ -f apps/web/.next/BUILD_ID ] && [ "$SAVED_FINGERPRINT" = "$FINGERPRINT" ]; then
+if [ -n "$CURRENT_BUILD_ID" ] && [ "$SAVED_FINGERPRINT" = "$FINGERPRINT" ] && [ "$SAVED_BUILD_ID" = "$CURRENT_BUILD_ID" ]; then
     echo "Using current production frontend build."
 else
     echo "Building production frontend for $PUBLIC_API..."
@@ -111,7 +116,7 @@ else
         tail -30 "$LOG_DIR/build.log" >&2
         exit 1
     fi
-    printf '%s\n' "$FINGERPRINT" > apps/web/.next/beanfeature-named-build.sha256
+    printf '%s %s\n' "$FINGERPRINT" "$(<apps/web/.next/BUILD_ID)" > apps/web/.next/beanfeature-named-build.sha256
 fi
 
 wait_for_local() {
