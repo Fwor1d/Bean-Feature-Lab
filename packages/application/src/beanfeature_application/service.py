@@ -95,8 +95,12 @@ class ApplicationService:
         if chosen.get("model__C") not in config.search_space["model__C"]:
             raise ValueError("Deployment hyperparameter is outside the frozen search space")
         condition = EngineCondition(
-            model=config.model, selector=config.selector, budget_kind="original_features",
-            k_original_features=16, n_components=None, seed=config.seed,
+            model=config.model,
+            selector=config.selector,
+            budget_kind="original_features",
+            k_original_features=16,
+            n_components=None,
+            seed=config.seed,
             search_space=config.search_space,
         )
         pipeline = build_pipeline(condition).set_params(**chosen)
