@@ -29,8 +29,11 @@ const contextCopy: Record<string, { heading: string; groups: { label: string; te
     { label: "Решение", text: "Парные потери показаны без вывода о достаточном k, пока нет утверждённого метода интервала." },
   ] },
   "/classifier": { heading: "Применение модели", groups: [
-    { label: "Реестр моделей", text: "Проверенные модели пока не обучены и не зарегистрированы." },
-    { label: "Граница", text: "Предсказание в будущем не будет подменять оценку качества в experiment run." },
+    { label: "Модель", text: "Logistic Regression · 16 исходных признаков" },
+    { label: "Dataset", text: "UCI Dry Bean · 602" },
+    { label: "Источник конфигурации", text: "RUN-000003" },
+    { label: "Режим", text: "Deployment / inference" },
+    { label: "Граница", text: "Финальная модель обучена на полном валидированном наборе данных. Это inference-сценарий, а не замена nested-CV оценки качества." },
   ] },
   "/settings": { heading: "Локальная среда", groups: [
     { label: "Конфигурация", text: "Параметры подключения задаются локальными environment variables." },

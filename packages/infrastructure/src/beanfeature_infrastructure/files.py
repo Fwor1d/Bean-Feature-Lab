@@ -18,11 +18,14 @@ class ArtifactStore:
         return path
 
     def write_json(self, relative_path: str, payload: object) -> str:
-        destination = self.resolve(relative_path)
-        destination.parent.mkdir(parents=True, exist_ok=True)
         content = json.dumps(
             payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False
         ).encode()
+        return self.write_binary(relative_path, content)
+
+    def write_binary(self, relative_path: str, content: bytes) -> str:
+        destination = self.resolve(relative_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
         digest = sha256(content).hexdigest()
         with NamedTemporaryFile(
             dir=destination.parent, prefix=".beanfeature-", delete=False

@@ -138,6 +138,20 @@ class FeatureBudgetPointResponse(BaseModel):
     outer_split_set_sha256: str
 
 
+class PredictRequest(BaseModel):
+    features: dict[str, object]
+
+
+class PredictResponse(BaseModel):
+    model_id: str
+    source_run: str
+    predicted_class: str
+    predicted_probability: float
+    probabilities: dict[str, float]
+    features: dict[str, float]
+    dataset_sha256: str
+
+
 class FoldResultResponse(BaseModel):
     fold_id: str
     split_sha256: str

@@ -14,11 +14,20 @@ experiment_app = typer.Typer()
 run_app = typer.Typer()
 dataset_app = typer.Typer()
 core_app = typer.Typer()
+classifier_app = typer.Typer()
 app.add_typer(system_app, name="system")
 app.add_typer(experiment_app, name="experiments")
 app.add_typer(run_app, name="runs")
 app.add_typer(dataset_app, name="dataset")
 app.add_typer(core_app, name="core")
+app.add_typer(classifier_app, name="classifier")
+
+
+@classifier_app.command("train")
+def train_classifier() -> None:
+    """Refit RUN-000003 baseline on validated data for deployment, not evaluation."""
+    metadata = create_container().service.train_deployment_classifier()
+    typer.echo(json.dumps(metadata, ensure_ascii=False, indent=2))
 
 
 @dataset_app.command("fetch")

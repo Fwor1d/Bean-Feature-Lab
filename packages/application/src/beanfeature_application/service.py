@@ -1,8 +1,12 @@
 import json
+import math
 import traceback
 from collections.abc import Callable
 from dataclasses import asdict, replace
+from datetime import UTC, datetime
 from hashlib import sha256
+
+import pandas as pd
 
 from beanfeature_research.contracts import (
     ModelId,
@@ -13,6 +17,7 @@ from beanfeature_research.contracts import (
 from beanfeature_research.engine import (
     EngineCondition,
     NestedResult,
+    build_pipeline,
     paired_comparison,
     preset_search_space,
     run_nested_cv,
@@ -21,6 +26,7 @@ from beanfeature_research.engine import (
 from .contracts import (
     DatasetRepository,
     DatasetStore,
+    DeploymentModelStore,
     Experiment,
     ExperimentConfig,
     ExperimentRepository,
@@ -49,6 +55,7 @@ class ApplicationService:
         datasets: DatasetRepository | None = None,
         dataset_store: DatasetStore | None = None,
         artifacts: ScientificArtifactStore | None = None,
+        deployment_models: DeploymentModelStore | None = None,
     ) -> None:
         self.experiments = experiments
         self.runs = runs
@@ -56,6 +63,104 @@ class ApplicationService:
         self.datasets = datasets
         self.dataset_store = dataset_store
         self.artifacts = artifacts
+        self.deployment_models = deployment_models
+
+    def train_deployment_classifier(self) -> dict[str, object]:
+        """Refit the completed 16-feature baseline for inference, never for evaluation."""
+        if not self.dataset_store or not self.deployment_models:
+            raise RuntimeError("Deployment infrastructure is unavailable")
+        run = self.get_run(3)
+        result = self.get_run_result(3)
+        if run.display_id != "RUN-000003" or result is None:
+            raise ConflictError("RUN-000003 must be completed with a verified result")
+        config = self.get_experiment(run.experiment_id).configuration
+        if (
+            config.model is not ModelId.LOGISTIC_REGRESSION
+            or config.selector is not SelectorId.NONE
+            or config.budget_kind != "original_features"
+            or config.k_original_features != 16
+            or config.evaluation_mode != "protocol"
+        ):
+            raise ValueError("RUN-000003 is not the expected 16-feature LR baseline")
+        dataset, manifest = self.dataset_store.load()
+        if (
+            run.dataset_hash != dataset.arff_sha256
+            or config.dataset_version != manifest["dataset_version"]
+        ):
+            raise ValueError("Baseline run and validated dataset do not match")
+        fold_params = [fold["best_params"] for fold in result["folds"]]
+        if len(fold_params) != 15 or any(params != fold_params[0] for params in fold_params):
+            raise ValueError("Baseline folds do not agree on deployment hyperparameters")
+        chosen = fold_params[0]
+        if chosen.get("model__C") not in config.search_space["model__C"]:
+            raise ValueError("Deployment hyperparameter is outside the frozen search space")
+        condition = EngineCondition(
+            model=config.model, selector=config.selector, budget_kind="original_features",
+            k_original_features=16, n_components=None, seed=config.seed,
+            search_space=config.search_space,
+        )
+        pipeline = build_pipeline(condition).set_params(**chosen)
+        pipeline.fit(dataset.features, dataset.target)
+        metadata: dict[str, object] = {
+            "model_id": "lr-uci-602-full16-v1",
+            "model_family": "Logistic Regression",
+            "source_run": run.display_id,
+            "dataset_id": 602,
+            "dataset_sha256": dataset.arff_sha256,
+            "feature_names": list(dataset.feature_names),
+            "classes": [str(value) for value in pipeline.classes_],
+            "training_timestamp_utc": datetime.now(UTC).isoformat(),
+            "selected_parameters": chosen,
+            "deployment_model": True,
+            "note": (
+                "Inference/demo model refitted on all validated UCI 602 rows; "
+                "not an independent performance evaluation."
+            ),
+        }
+        return self.deployment_models.save(pipeline, metadata)
+
+    def classifier_info(self) -> dict[str, object] | None:
+        return self.deployment_models.metadata() if self.deployment_models else None
+
+    def classifier_example(self) -> dict[str, float]:
+        if not self.dataset_store:
+            raise RuntimeError("Dataset infrastructure is unavailable")
+        dataset, _ = self.dataset_store.load()
+        return {name: float(dataset.features.iloc[0][name]) for name in dataset.feature_names}
+
+    def predict_classifier(self, features: dict[str, object]) -> dict[str, object]:
+        if not self.deployment_models:
+            raise RuntimeError("Deployment infrastructure is unavailable")
+        pipeline, metadata = self.deployment_models.load()
+        names = metadata["feature_names"]
+        if not isinstance(names, list) or set(features) != set(names):
+            missing = sorted(set(names) - set(features)) if isinstance(names, list) else []
+            extra = sorted(set(features) - set(names)) if isinstance(names, list) else []
+            raise ValueError(
+                f"Exactly 16 canonical features are required; missing={missing}, extra={extra}"
+            )
+        values: dict[str, float] = {}
+        for name in names:
+            raw = features[name]
+            if isinstance(raw, bool) or not isinstance(raw, (float, int)) or not math.isfinite(raw):
+                raise ValueError(f"{name} must be a finite numeric value")
+            values[name] = float(raw)
+        frame = pd.DataFrame([values], columns=names)
+        predicted = str(pipeline.predict(frame)[0])
+        probabilities = pipeline.predict_proba(frame)[0]
+        labels = [str(label) for label in pipeline.classes_]
+        scores = {label: float(score) for label, score in zip(labels, probabilities, strict=True)}
+        if labels != metadata["classes"] or predicted not in scores:
+            raise ValueError("Deployment model class metadata mismatch")
+        return {
+            "model_id": metadata["model_id"],
+            "source_run": metadata["source_run"],
+            "predicted_class": predicted,
+            "predicted_probability": scores[predicted],
+            "probabilities": scores,
+            "features": values,
+            "dataset_sha256": metadata["dataset_sha256"],
+        }
 
     def create_experiment(self, name: str, configuration: ExperimentConfig) -> Experiment:
         clean_name = name.strip()

@@ -5,6 +5,7 @@ from beanfeature_application.service import ApplicationService
 
 from .database import make_engine, make_session_factory
 from .datasets import UCIDatasetStore
+from .deployment import LocalDeploymentModelStore
 from .files import ArtifactStore
 from .metadata import EnvironmentMetadata, SQLiteWorkerHeartbeat
 from .repositories import SQLiteDatasetRepository, SQLiteExperimentRepository, SQLiteRunRepository
@@ -32,6 +33,7 @@ def create_container(database_url: str | None = None) -> Container:
             datasets=datasets,
             dataset_store=dataset_store,
             artifacts=artifacts,
+            deployment_models=LocalDeploymentModelStore(),
         ),
         metadata=metadata,
         heartbeat=SQLiteWorkerHeartbeat(sessions),

@@ -81,6 +81,29 @@ export interface DatasetManifest {
   official_schema_acknowledged: boolean;
 }
 
+export interface ClassifierModel {
+  model_id: string;
+  model_family: string;
+  source_run: string;
+  dataset_id: number;
+  dataset_sha256: string;
+  feature_names: string[];
+  classes: string[];
+  training_timestamp_utc: string;
+  deployment_model: true;
+  note: string;
+}
+
+export interface ClassifierPrediction {
+  model_id: string;
+  source_run: string;
+  predicted_class: string;
+  predicted_probability: number;
+  probabilities: Record<string, number>;
+  features: Record<string, number>;
+  dataset_sha256: string;
+}
+
 export interface RunSummary {
   run_id: string;
   status: RunStatus;

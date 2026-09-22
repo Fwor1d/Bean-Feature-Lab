@@ -20,6 +20,8 @@ from .schemas import (
     FeatureBudgetPointResponse,
     FoldResultResponse,
     HealthResponse,
+    PredictRequest,
+    PredictResponse,
     ProjectResponse,
     RunResponse,
     RunSummaryResponse,
@@ -63,7 +65,8 @@ def create_app(database_url: str | None = None) -> FastAPI:
 
     @application.middleware("http")
     async def public_demo_guard(request: Request, call_next):
-        if demo_read_only and request.method not in {"GET", "HEAD", "OPTIONS"}:
+        inference = request.method == "POST" and request.url.path == "/api/v1/classifier/predict"
+        if demo_read_only and request.method not in {"GET", "HEAD", "OPTIONS"} and not inference:
             return error_response("demo_read_only", "Public presentation is read-only", 403)
         return await call_next(request)
 
@@ -123,6 +126,21 @@ def create_app(database_url: str | None = None) -> FastAPI:
     @application.get("/api/v1/datasets/{dataset_id}/manifest")
     def dataset_manifest(dataset_id: int, service: Service):
         return service.get_dataset_manifest(dataset_id)
+
+    @application.get("/api/v1/classifier/model")
+    def classifier_model(service: Service):
+        model = service.classifier_info()
+        if model is None:
+            return error_response("not_found", "Deployment model is not registered", 404)
+        return model
+
+    @application.get("/api/v1/classifier/example")
+    def classifier_example(service: Service):
+        return {"features": service.classifier_example()}
+
+    @application.post("/api/v1/classifier/predict", response_model=PredictResponse)
+    def classifier_predict(body: PredictRequest, service: Service):
+        return service.predict_classifier(body.features)
 
     @application.get("/api/v1/experiments", response_model=list[ExperimentResponse])
     def experiments(service: Service) -> list[ExperimentResponse]:
