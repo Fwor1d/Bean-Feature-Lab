@@ -1,5 +1,5 @@
 import type {
-  ClassifierModel, ClassifierPrediction, Dataset, DatasetManifest, Experiment, FeatureBudgetPoint, FoldResult, PairedComparison,
+  ClassifierModel, ClassifierPrediction, CoreSufficiency, Dataset, DatasetManifest, Experiment, FeatureBudgetPoint, FoldResult, PairedComparison,
   Project, Run, RunDetail, RunSummary, SystemInfo,
 } from "./contracts";
 
@@ -44,6 +44,7 @@ export const api = {
   runDetail: (id: number) => request<RunDetail>(`/api/v1/runs/${id}/detail`),
   runFolds: (id: number) => request<FoldResult[]>(`/api/v1/runs/${id}/folds`),
   featureBudgetSeries: () => request<FeatureBudgetPoint[]>("/api/v1/feature-budget/series"),
+  coreSufficiency: () => request<CoreSufficiency[]>("/api/v1/core/sufficiency"),
   pairedComparison: (compact: number, baseline: number) =>
     request<PairedComparison>(`/api/v1/runs/${compact}/paired-comparison/${baseline}`),
   createExperiment: (body: { name: string; configuration: Experiment["configuration"] }) =>

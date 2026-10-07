@@ -183,7 +183,12 @@ def enqueue_core_mi(
 
 
 @core_app.command("sufficiency")
-def core_sufficiency(model: Annotated[ModelId | None, typer.Option()] = None) -> None:
+def core_sufficiency(
+    model: Annotated[ModelId | None, typer.Option()] = None,
+    persist: Annotated[
+        bool, typer.Option(help="Write a hash-addressed derived analysis artifact")
+    ] = False,
+) -> None:
     service = create_container().service
     models = (
         [model]
@@ -198,7 +203,7 @@ def core_sufficiency(model: Annotated[ModelId | None, typer.Option()] = None) ->
     )
     typer.echo(
         json.dumps(
-            [service.core_sufficiency(selected) for selected in models],
+            [service.core_sufficiency(selected, persist=persist) for selected in models],
             ensure_ascii=False,
             indent=2,
         )

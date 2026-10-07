@@ -26,7 +26,7 @@ const contextCopy: Record<string, { heading: string; groups: { label: string; te
   ] },
   "/compare": { heading: "Условия сравнения", groups: [
     { label: "Сопоставимость", text: "Сравнивать можно runs с одинаковой версией данных и внешними CV-разбиениями." },
-    { label: "Решение", text: "Парные потери показаны без вывода о достаточном k, пока нет утверждённого метода интервала." },
+    { label: "Решение", text: "Достаточность определяет one-sided Nadeau–Bengio corrected interval с margin 0,01 и Bonferroni-поправкой внутри модели." },
   ] },
   "/classifier": { heading: "Применение модели", groups: [
     { label: "Модель", text: "Logistic Regression · 16 исходных признаков" },
@@ -88,7 +88,7 @@ function BudgetContext() {
       </div>
       <div className="context-group">
         <p className="context-label">Критерий достаточности <IconInfoCircle size={15} style={{ verticalAlign: "middle" }} /></p>
-        <p className="context-copy">Протокольная допустимая потеря Macro-F1: 0,01 относительно базового варианта той же модели. Вывод невозможен до расчёта парных различий и утверждения метода интервала.</p>
+        <p className="context-copy">Допустимая потеря Macro-F1: 0,01. Односторонняя верхняя граница считается Nadeau–Bengio corrected method с Bonferroni α=0,05/15.</p>
       </div>
       <Button component={Link} href="/experiments" variant="outlined" endIcon={<IconArrowRight size={16} />}
         sx={{ color: "#d9e8ff", borderColor: "#7198d6", width: "100%" }}>Сохранить конфигурацию</Button>

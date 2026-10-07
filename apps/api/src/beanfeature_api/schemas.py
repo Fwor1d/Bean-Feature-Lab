@@ -133,9 +133,47 @@ class FeatureBudgetPointResponse(BaseModel):
     budget_kind: Literal["original_features"]
     k_original_features: int
     macro_f1_mean: float
+    accuracy_mean: float
     macro_f1_fold_sd_descriptive: float | None
     dataset_hash: str
     outer_split_set_sha256: str
+
+
+class PairedLossResponse(BaseModel):
+    fold_id: str
+    loss_macro_f1: float
+
+
+class SufficiencyComparisonResponse(BaseModel):
+    k_original_features: int
+    decision: Literal["sufficient", "not_sufficient", "not_calculated"]
+    interval_method: str | None = None
+    margin_macro_f1: float | None = None
+    family_alpha: float | None = None
+    comparison_alpha: float | None = None
+    multiplicity_method: str | None = None
+    n_paired_folds: int | None = None
+    test_train_ratio: float | None = None
+    paired_losses: list[PairedLossResponse] = Field(default_factory=list)
+    mean_loss: float | None = None
+    sample_variance: float | None = None
+    corrected_variance: float | None = None
+    corrected_standard_error: float | None = None
+    critical_value: float | None = None
+    one_sided_upper_confidence_bound: float | None = None
+    sufficient_k: int | None = None
+    status: str | None = None
+
+
+class CoreSufficiencyResponse(BaseModel):
+    model: ModelId
+    baseline_run_id: str | None = None
+    dataset_hash: str | None = None
+    outer_split_set_sha256: str | None = None
+    minimal_sufficient_k: int | None
+    status: Literal["CALCULATED", "PARTIAL", "NOT_CALCULATED_MISSING_BASELINE"]
+    calculated_comparisons: int = 0
+    comparisons: list[SufficiencyComparisonResponse]
 
 
 class PredictRequest(BaseModel):

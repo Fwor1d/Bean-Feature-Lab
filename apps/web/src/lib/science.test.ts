@@ -4,7 +4,7 @@ import { budgetCohorts, metric } from "./science";
 
 const point = (dataset_hash: string, outer_split_set_sha256: string, k_original_features: number): FeatureBudgetPoint => ({
   run_id: `RUN-${k_original_features}`, model: "logistic_regression", budget_kind: "original_features",
-  k_original_features, macro_f1_mean: 0.5, macro_f1_fold_sd_descriptive: null,
+  k_original_features, macro_f1_mean: 0.5, accuracy_mean: 0.5, macro_f1_fold_sd_descriptive: null,
   dataset_hash, outer_split_set_sha256,
 });
 

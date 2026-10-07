@@ -4,8 +4,8 @@ import { BudgetResultsGrid, type BudgetRow } from "@/components/BudgetResultsGri
 import { EmptyPlot } from "@/components/EmptyPlot";
 import { ScientificPlot } from "@/components/ScientificPlot";
 import { api, apiErrorMessage } from "@/lib/api/client";
-import type { Experiment, FeatureBudgetPoint, Run } from "@/lib/api/contracts";
-import { budgetCohorts, metric, modelLabel } from "@/lib/science";
+import type { CoreSufficiency, Experiment, FeatureBudgetPoint, Run } from "@/lib/api/contracts";
+import { budgetCohorts, modelLabel } from "@/lib/science";
 
 type Query = { budget?: string; model?: string; selector?: string; cohort?: string };
 
@@ -15,9 +15,12 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
   let series: FeatureBudgetPoint[] = [];
   let runs: Run[] = [];
   let experiments: Experiment[] = [];
+  let sufficiency: CoreSufficiency[] = [];
   let error: string | null = null;
   try {
-    [series, runs, experiments] = await Promise.all([api.featureBudgetSeries(), api.runs(), api.experiments()]);
+    [series, runs, experiments, sufficiency] = await Promise.all([
+      api.featureBudgetSeries(), api.runs(), api.experiments(), api.coreSufficiency(),
+    ]);
   } catch (caught) { error = apiErrorMessage(caught); }
 
   const experimentById = new Map(experiments.map(item => [item.id, item]));
@@ -53,7 +56,7 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
   const rows: BudgetRow[] = points.map(point => ({
     id: point.run_id, runId: runByDisplayId.get(point.run_id)?.id ?? Number(point.run_id.slice(4)),
     model: point.model, condition: "Mutual Information", k: point.k_original_features,
-    macroF1: point.macro_f1_mean, accuracy: runByDisplayId.get(point.run_id)?.metrics?.accuracy_mean ?? null,
+    macroF1: point.macro_f1_mean, accuracy: point.accuracy_mean,
   }));
   rows.push(...baselines.map(item => ({
     id: item.run.display_id, runId: item.run.id, model: item.summary.summary!.model,
@@ -69,8 +72,10 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
   }
   const partial = !pca && points.length > 0 && [...perModel.values()].some(budgets => budgets.size < 16);
   const measured = [...perModel.entries()].map(([model, budgets]) => `${modelLabel[model as FeatureBudgetPoint["model"]]}: ${budgets.size}/16`).join(" · ");
-  const exampleRun = points[0] && runByDisplayId.get(points[0].run_id);
-  const exampleSummary = exampleRun ? await api.runSummary(exampleRun.id).catch(() => null) : null;
+  const visibleModels = new Set(points.map(point => point.model));
+  const visibleSufficiency = sufficiency.filter(item => visibleModels.has(item.model));
+  const sufficientMarkers = visibleSufficiency.flatMap(item => item.minimal_sufficient_k == null
+    ? [] : [{ model: item.model, k: item.minimal_sufficient_k }]);
   return <>
     <h1 className="page-heading">Бюджет признаков</h1>
     <p className="page-question">Как меняется Macro-F1 при сокращении числа исходных измеряемых признаков? Каждая точка — завершённое условие полного nested CV; отсутствующие k не интерполируются.</p>
@@ -88,13 +93,13 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
       <div className="figure-heading"><h2 id="figure-title">Macro-F1 · исходные признаки</h2>
         <Chip label={pca || !points.length ? "Не рассчитано" : partial ? "Частичные результаты" : "Рассчитано"} size="small" variant="outlined" />
       </div>
-      {pca ? <EmptyPlot pca /> : <ScientificPlot points={points} baselines={baselines.map(item => ({ runId: item.run.display_id, model: item.model, macroF1: item.macroF1 }))} />}
-      <p className="table-note">{pca ? "PCA требует все 16 исходных измерений." : `Только сохранённые значения; ромб — сопоставимый baseline на 16 исходных признаках. Набор: ${selectedCohort ? `${selectedCohort.slice(0, 12)}… · outer ${selectedCohort.slice(65, 77)}…` : "не рассчитано"}. Без статистического интервала достаточность k не определена.`}</p>
+      {pca ? <EmptyPlot pca /> : <ScientificPlot points={points} baselines={baselines.map(item => ({ runId: item.run.display_id, model: item.model, macroF1: item.macroF1 }))} sufficient={sufficientMarkers} />}
+      <p className="table-note">{pca ? "PCA требует все 16 исходных измерений." : `Только сохранённые значения; ромб — сопоставимый baseline, зелёное кольцо — минимальное sufficient k. Набор: ${selectedCohort ? `${selectedCohort.slice(0, 12)}… · outer ${selectedCohort.slice(65, 77)}…` : "не рассчитано"}.`}</p>
     </section>
     <section className="table-surface" aria-labelledby="table-title">
       <div className="table-heading"><h2 id="table-title">Завершённые условия</h2><span className="table-note">{rows.length} записей · Accuracy из того же run</span></div>
       <BudgetResultsGrid rows={pca ? [] : rows} />
     </section>
-    <p className="scientific-footnote">Критерий достаточности: {metric(exampleSummary?.summary?.sufficient_k)}. Заранее заданная допустимая потеря — 0,01 Macro-F1 относительно baseline той же модели; метод интервала для зависимых folds ещё не утверждён.</p>
+    <p className="scientific-footnote">Критерий: paired loss относительно baseline той же модели, margin 0,01; one-sided Nadeau–Bengio corrected interval с Bonferroni 0,05/15. {visibleSufficiency.length ? visibleSufficiency.map(item => `${modelLabel[item.model]}: ${item.status === "CALCULATED" ? item.minimal_sufficient_k ?? "не установлено" : item.status === "PARTIAL" ? `частично (${item.calculated_comparisons}/15)` : "не рассчитано"}`).join(" · ") : "Для выбранных моделей решений нет."}</p>
   </>;
 }

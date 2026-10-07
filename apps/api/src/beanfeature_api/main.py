@@ -11,8 +11,10 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from beanfeature_application.service import ApplicationService, ConflictError, NotFoundError
 from beanfeature_infrastructure.bootstrap import Container, create_container
+from beanfeature_research.contracts import ModelId
 
 from .schemas import (
+    CoreSufficiencyResponse,
     CreateExperimentRequest,
     DatasetResponse,
     ErrorResponse,
@@ -223,6 +225,18 @@ def create_app(database_url: str | None = None) -> FastAPI:
             FeatureBudgetPointResponse.model_validate(item)
             for item in service.feature_budget_series()
         ]
+
+    @application.get("/api/v1/core/sufficiency", response_model=list[CoreSufficiencyResponse])
+    def core_sufficiency(service: Service) -> list[CoreSufficiencyResponse]:
+        return [
+            CoreSufficiencyResponse.model_validate(service.core_sufficiency(model))
+            for model in ModelId
+            if model is not ModelId.MLP
+        ]
+
+    @application.get("/api/v1/core/sufficiency/{model}", response_model=CoreSufficiencyResponse)
+    def model_sufficiency(model: ModelId, service: Service) -> CoreSufficiencyResponse:
+        return CoreSufficiencyResponse.model_validate(service.core_sufficiency(model))
 
     @application.post("/api/v1/runs/{run_id}/cancel", response_model=RunResponse)
     def cancel_run(run_id: int, service: Service) -> RunResponse:

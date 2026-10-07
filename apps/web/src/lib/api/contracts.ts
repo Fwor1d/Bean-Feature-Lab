@@ -147,6 +147,7 @@ export interface FeatureBudgetPoint {
   budget_kind: "original_features";
   k_original_features: number;
   macro_f1_mean: number;
+  accuracy_mean: number;
   macro_f1_fold_sd_descriptive: number | null;
   dataset_hash: string;
   outer_split_set_sha256: string;
@@ -195,12 +196,56 @@ export interface PairedComparison {
   baseline_run_id: string;
   dataset_hash: string;
   comparison: {
+    interval_method: string;
     margin_macro_f1: number;
+    family_alpha: number;
+    comparison_alpha: number;
+    multiplicity_method: string;
+    n_paired_folds: number;
+    test_train_ratio: number;
     paired_losses: { fold_id: string; loss_macro_f1: number }[];
-    mean_loss_descriptive: number;
+    mean_loss: number;
+    sample_variance: number;
+    corrected_variance: number;
+    corrected_standard_error: number;
+    critical_value: number;
+    one_sided_upper_confidence_bound: number;
+    decision: "sufficient" | "not_sufficient";
     sufficient_k: number | null;
     status: string;
   };
+}
+
+export interface SufficiencyComparison {
+  k_original_features: number;
+  decision: "sufficient" | "not_sufficient" | "not_calculated";
+  interval_method: string | null;
+  margin_macro_f1: number | null;
+  family_alpha: number | null;
+  comparison_alpha: number | null;
+  multiplicity_method: string | null;
+  n_paired_folds: number | null;
+  test_train_ratio: number | null;
+  paired_losses: { fold_id: string; loss_macro_f1: number }[];
+  mean_loss: number | null;
+  sample_variance: number | null;
+  corrected_variance: number | null;
+  corrected_standard_error: number | null;
+  critical_value: number | null;
+  one_sided_upper_confidence_bound: number | null;
+  sufficient_k: number | null;
+  status: string | null;
+}
+
+export interface CoreSufficiency {
+  model: ModelId;
+  baseline_run_id: string | null;
+  dataset_hash: string | null;
+  outer_split_set_sha256: string | null;
+  minimal_sufficient_k: number | null;
+  status: "CALCULATED" | "PARTIAL" | "NOT_CALCULATED_MISSING_BASELINE";
+  calculated_comparisons: number;
+  comparisons: SufficiencyComparison[];
 }
 
 export interface ApiErrorBody {

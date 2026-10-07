@@ -494,6 +494,7 @@ class ApplicationService:
                     "budget_kind": summary["budget_kind"],
                     "k_original_features": summary["k_original_features"],
                     "macro_f1_mean": summary["macro_f1_mean"],
+                    "accuracy_mean": summary["accuracy_mean"],
                     "macro_f1_fold_sd_descriptive": summary["macro_f1_fold_sd_descriptive"],
                     "dataset_hash": run.dataset_hash,
                     "outer_split_set_sha256": summary["outer_split_set_sha256"],
@@ -545,7 +546,7 @@ class ApplicationService:
         digest = self.artifacts.write_json(path, payload)
         return {**payload, "artifact_relative_path": path, "artifact_sha256": digest}
 
-    def core_sufficiency(self, model: ModelId) -> dict[str, object]:
+    def core_sufficiency(self, model: ModelId, *, persist: bool = False) -> dict[str, object]:
         """Evaluate all available Core MI k values against the matching no-selector baseline."""
         completed: list[tuple[Run, ExperimentConfig]] = []
         for run in self.list_runs():
@@ -592,11 +593,25 @@ class ApplicationService:
             if result["decision"] == "sufficient":
                 sufficient.append(k)
         calculated = sum(item["decision"] != "not_calculated" for item in comparisons)
-        return {
+        payload: dict[str, object] = {
             "model": model.value,
             "baseline_run_id": baseline.display_id,
+            "dataset_hash": baseline.dataset_hash,
+            "outer_split_set_sha256": baseline.summary["outer_split_set_sha256"]
+            if baseline.summary
+            else None,
             "minimal_sufficient_k": min(sufficient) if sufficient else None,
             "status": "CALCULATED" if calculated == 15 else "PARTIAL",
             "calculated_comparisons": calculated,
             "comparisons": comparisons,
         }
+        if not persist:
+            return payload
+        if not self.artifacts:
+            raise RuntimeError("Scientific artifact store is unavailable")
+        path = (
+            f"analysis/core-sufficiency-{model.value}-{payload['status'].lower()}-"
+            f"{calculated:02d}.json"
+        )
+        digest = self.artifacts.write_json(path, payload)
+        return {**payload, "artifact_relative_path": path, "artifact_sha256": digest}

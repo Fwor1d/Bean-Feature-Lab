@@ -15,6 +15,16 @@ def test_empty_collections(api_client) -> None:
         assert response.status_code == 200
         assert response.json() == []
 
+    sufficiency = api_client.get("/api/v1/core/sufficiency")
+    assert sufficiency.status_code == 200
+    assert len(sufficiency.json()) == 5
+    assert all(
+        item["status"] == "NOT_CALCULATED_MISSING_BASELINE"
+        and item["minimal_sufficient_k"] is None
+        and item["comparisons"] == []
+        for item in sufficiency.json()
+    )
+
 
 def test_create_experiment_and_run_without_fake_metrics(api_client) -> None:
     experiment = api_client.post(

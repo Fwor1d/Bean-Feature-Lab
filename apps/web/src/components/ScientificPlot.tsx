@@ -3,12 +3,16 @@
 import dynamic from "next/dynamic";
 import { useMediaQuery } from "@mui/material";
 import type { Data, Layout } from "plotly.js";
-import type { FeatureBudgetPoint } from "@/lib/api/contracts";
+import type { FeatureBudgetPoint, ModelId } from "@/lib/api/contracts";
 import { modelLabel } from "@/lib/science";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
-export function ScientificPlot({ points, baselines }: { points: FeatureBudgetPoint[]; baselines: { runId: string; model: string; macroF1: number }[] }) {
+export function ScientificPlot({ points, baselines, sufficient }: {
+  points: FeatureBudgetPoint[];
+  baselines: { runId: string; model: string; macroF1: number }[];
+  sufficient: { model: ModelId; k: number }[];
+}) {
   const narrow = useMediaQuery("(max-width: 820px)");
   const byModel = new Map<string, FeatureBudgetPoint[]>();
   for (const point of points) {
@@ -28,6 +32,16 @@ export function ScientificPlot({ points, baselines }: { points: FeatureBudgetPoi
     marker: { size: 15, color: "#263c53", symbol: "diamond", line: { color: "#fff", width: 1 } },
     hovertemplate: "16 исходных признаков<br>Macro-F1=%{y:.4f}<br>%{customdata}<extra>Baseline</extra>",
   });
+  for (const result of sufficient) {
+    const point = points.find(item => item.model === result.model && item.k_original_features === result.k);
+    if (!point) continue;
+    traces.push({
+      type: "scatter", mode: "markers", name: `${modelLabel[result.model]} · мин. достаточное k`,
+      x: [result.k], y: [point.macro_f1_mean], customdata: [point.run_id],
+      marker: { size: 20, color: "rgba(0,0,0,0)", symbol: "circle-open", line: { color: "#17835c", width: 3 } },
+      hovertemplate: "Минимальное sufficient k=%{x}<br>Macro-F1=%{y:.4f}<br>%{customdata}<extra></extra>",
+    });
+  }
   const layout: Partial<Layout> = {
     autosize: true, paper_bgcolor: "#ffffff", plot_bgcolor: "#ffffff",
     font: { family: "Golos Text, Arial, sans-serif", size: 12, color: "#35465c" },
