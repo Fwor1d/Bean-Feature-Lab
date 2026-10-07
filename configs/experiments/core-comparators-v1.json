@@ -1,0 +1,39 @@
+{
+  "configuration_version": "core-comparators-v1",
+  "dataset_id": 602,
+  "cv_protocol_version": "dry-bean-nested-5x3-4-v1",
+  "seed": 42,
+  "original_feature_control_points": [1, 2, 4, 8, 12, 16],
+  "anova": {
+    "models": ["svm_rbf", "random_forest", "xgboost"],
+    "k_original_features": [1, 2, 4, 8, 12, 16]
+  },
+  "rfe": {
+    "models": {
+      "logistic_regression": {"selector_estimator": "logistic_regression"},
+      "svm_rbf": {"selector_estimator": "linear_svm"}
+    },
+    "step": 1,
+    "k_original_features": [1, 2, 4, 8, 12, 16],
+    "note": "linear_svm is the fold-local RFE ranking estimator, not the final RBF classifier"
+  },
+  "tree_importance": {
+    "models": ["random_forest", "xgboost", "lightgbm"],
+    "ranking_estimator_matches_model_family": true,
+    "k_original_features": [1, 2, 4, 8, 12, 16]
+  },
+  "l1_sparse_path": {
+    "model": "logistic_regression",
+    "selector_estimator": "l1_logistic",
+    "selector_c_values": [0.01, 0.1, 1.0, 10.0],
+    "fixed_k_curve": false,
+    "record_observed_nonzero_features_per_fold": true
+  },
+  "pca": {
+    "models": ["logistic_regression", "svm_rbf"],
+    "n_components": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+    "required_raw_feature_count": 16,
+    "physical_feature_reduction": false
+  },
+  "results": null
+}
