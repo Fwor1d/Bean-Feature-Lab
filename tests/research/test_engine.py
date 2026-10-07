@@ -10,6 +10,7 @@ from sklearn.pipeline import Pipeline
 from beanfeature_research.contracts import ModelId, SelectorId
 from beanfeature_research.engine import (
     EngineCondition,
+    NestedResult,
     build_pipeline,
     outer_splits,
     paired_comparison,
@@ -114,6 +115,65 @@ def test_paired_comparison_rejects_smoke_and_misaligned_folds(synthetic_classifi
     smoke = run_nested_cv(features, target, condition())
     with pytest.raises(ValueError, match="Smoke results"):
         paired_comparison(smoke, smoke)
+
+
+def _paired_fixture(
+    losses: list[float], *, compact_k: int = 4
+) -> tuple[NestedResult, NestedResult]:
+    compact_folds = []
+    baseline_folds = []
+    for index, loss in enumerate(losses):
+        fold = f"r{index // 5 + 1:02d}-f{index % 5 + 1:02d}"
+        split = f"split-{index}"
+        compact_folds.append({"fold_id": fold, "split_sha256": split, "macro_f1": 0.8})
+        baseline_folds.append({"fold_id": fold, "split_sha256": split, "macro_f1": 0.8 + loss})
+    compact = NestedResult(
+        compact_folds,
+        {
+            "evaluation_mode": "protocol",
+            "model": "logistic_regression",
+            "budget_kind": "original_features",
+            "k_original_features": compact_k,
+        },
+        [],
+    )
+    baseline = NestedResult(
+        baseline_folds,
+        {
+            "evaluation_mode": "protocol",
+            "model": "logistic_regression",
+            "budget_kind": "original_features",
+            "k_original_features": 16,
+        },
+        [],
+    )
+    return compact, baseline
+
+
+def test_corrected_repeated_cv_interval_uses_predeclared_formula() -> None:
+    losses = [0.001 * index for index in range(15)]
+    compact, baseline = _paired_fixture(losses)
+    first = paired_comparison(compact, baseline)
+    second = paired_comparison(compact, baseline)
+    sample_variance = np.var(losses, ddof=1)
+    expected = ((1 / 15 + 1 / 4) * sample_variance) ** 0.5
+    naive = sample_variance**0.5 / 15**0.5
+    assert first == second
+    assert first["corrected_standard_error"] == pytest.approx(expected)
+    assert first["corrected_standard_error"] != pytest.approx(naive)
+    assert first["comparison_alpha"] == pytest.approx(0.05 / 15)
+    assert first["multiplicity_method"] == "bonferroni-within-model-15-one-sided"
+    assert first["interval_method"] == "nadeau-bengio-corrected-resampled-t-v1"
+
+
+def test_sufficiency_rejects_fold_mismatch_and_k16_candidate() -> None:
+    compact, baseline = _paired_fixture([0.001] * 15)
+    baseline.folds[2]["split_sha256"] = "different"
+    with pytest.raises(ValueError, match="Outer folds differ"):
+        paired_comparison(compact, baseline)
+    full, reference = _paired_fixture([0.001] * 15, compact_k=16)
+    with pytest.raises(ValueError, match="fewer than 16"):
+        paired_comparison(full, reference)
 
 
 @pytest.mark.parametrize(

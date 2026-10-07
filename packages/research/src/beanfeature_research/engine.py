@@ -6,13 +6,14 @@ from dataclasses import dataclass
 from functools import partial
 from hashlib import sha256
 from io import BytesIO
-from statistics import mean, median, stdev
+from statistics import mean, median, stdev, variance
 from time import perf_counter_ns
 from typing import Literal
 
 import joblib
 import numpy as np
 import pandas as pd
+from scipy.stats import t as student_t
 from sklearn.base import BaseEstimator, TransformerMixin, clone
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
@@ -37,6 +38,11 @@ from .dataset import TARGET
 CV_PROTOCOL_VERSION = "dry-bean-nested-5x3-4-v1"
 SMOKE_PROTOCOL_VERSION = "integration-smoke-2x1-2-v1"
 SEARCH_SPACE_VERSION = "small-grid-v1"
+SUFFICIENCY_INTERVAL_VERSION = "nadeau-bengio-corrected-resampled-t-v1"
+SUFFICIENCY_MARGIN = 0.01
+SUFFICIENCY_FAMILY_ALPHA = 0.05
+SUFFICIENCY_COMPARISONS = 15
+OUTER_TEST_TRAIN_RATIO = 1 / 4
 
 
 def preset_search_space(model: ModelId, *, smoke: bool = False) -> dict[str, list[object]]:
@@ -444,10 +450,34 @@ def paired_comparison(compact: NestedResult, baseline: NestedResult) -> dict[str
                 "loss_macro_f1": float(full["macro_f1"]) - float(small["macro_f1"]),
             }
         )
+    values = [item["loss_macro_f1"] for item in losses]
+    n = len(values)
+    if n != 15:
+        raise ValueError("Corrected sufficient-k analysis requires 15 paired outer folds")
+    sample_variance = variance(values)
+    corrected_variance = (1 / n + OUTER_TEST_TRAIN_RATIO) * sample_variance
+    corrected_se = corrected_variance**0.5
+    adjusted_alpha = SUFFICIENCY_FAMILY_ALPHA / SUFFICIENCY_COMPARISONS
+    critical_value = float(student_t.ppf(1 - adjusted_alpha, df=n - 1))
+    mean_loss = mean(values)
+    upper_bound = mean_loss + critical_value * corrected_se
+    sufficient = upper_bound <= SUFFICIENCY_MARGIN
     return {
-        "margin_macro_f1": 0.01,
+        "interval_method": SUFFICIENCY_INTERVAL_VERSION,
+        "margin_macro_f1": SUFFICIENCY_MARGIN,
+        "family_alpha": SUFFICIENCY_FAMILY_ALPHA,
+        "comparison_alpha": adjusted_alpha,
+        "multiplicity_method": "bonferroni-within-model-15-one-sided",
+        "n_paired_folds": n,
+        "test_train_ratio": OUTER_TEST_TRAIN_RATIO,
         "paired_losses": losses,
-        "mean_loss_descriptive": mean(item["loss_macro_f1"] for item in losses),
-        "sufficient_k": None,
-        "status": "NOT_ASSESSED_INTERVAL_METHOD_UNAPPROVED",
+        "mean_loss": mean_loss,
+        "sample_variance": sample_variance,
+        "corrected_variance": corrected_variance,
+        "corrected_standard_error": corrected_se,
+        "critical_value": critical_value,
+        "one_sided_upper_confidence_bound": upper_bound,
+        "decision": "sufficient" if sufficient else "not_sufficient",
+        "sufficient_k": compact.summary["k_original_features"] if sufficient else None,
+        "status": "CALCULATED",
     }

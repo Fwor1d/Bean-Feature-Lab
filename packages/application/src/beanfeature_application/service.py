@@ -237,6 +237,83 @@ class ApplicationService:
         self.get_experiment(experiment_id)
         return self.runs.create(experiment_id)
 
+    def enqueue_core_matrix(self, *, create: bool) -> dict[str, object]:
+        """Idempotently plan or enqueue missing Core MI and 16-feature baselines."""
+        datasets = self.list_datasets()
+        if len(datasets) != 1:
+            raise ValueError("Exactly one validated dataset version is required")
+        dataset_version = str(datasets[0]["version"])
+        core_models = (
+            ModelId.LOGISTIC_REGRESSION,
+            ModelId.SVM_RBF,
+            ModelId.RANDOM_FOREST,
+            ModelId.XGBOOST,
+            ModelId.LIGHTGBM,
+        )
+        conditions: list[tuple[str, ExperimentConfig]] = []
+        for model in (*core_models, ModelId.MLP):
+            conditions.append(
+                (
+                    f"C0 baseline {model.value}",
+                    ExperimentConfig(
+                        model=model,
+                        selector=SelectorId.NONE,
+                        budget_kind="original_features",
+                        k_original_features=16,
+                        dataset_version=dataset_version,
+                        search_space=preset_search_space(model),
+                    ),
+                )
+            )
+        for model in core_models:
+            for k in range(1, 17):
+                conditions.append(
+                    (
+                        f"C1 MI {model.value} k={k}",
+                        ExperimentConfig(
+                            model=model,
+                            selector=SelectorId.MUTUAL_INFORMATION,
+                            budget_kind="original_features",
+                            k_original_features=k,
+                            dataset_version=dataset_version,
+                            search_space=preset_search_space(model),
+                        ),
+                    )
+                )
+        experiments = self.list_experiments()
+        runs = self.list_runs()
+        run_by_experiment: dict[int, list[Run]] = {}
+        for run in runs:
+            run_by_experiment.setdefault(run.experiment_id, []).append(run)
+        summary: dict[str, object] = {
+            "total_conditions": len(conditions),
+            "completed": 0,
+            "active": 0,
+            "missing": 0,
+            "retried": 0,
+            "created_run_ids": [],
+        }
+        for name, config in conditions:
+            matching = [item for item in experiments if item.configuration == config]
+            matching_runs = [run for item in matching for run in run_by_experiment.get(item.id, [])]
+            if any(run.status.value == "COMPLETED" for run in matching_runs):
+                summary["completed"] = int(summary["completed"]) + 1
+                continue
+            if any(run.status.value in {"QUEUED", "RUNNING"} for run in matching_runs):
+                summary["active"] = int(summary["active"]) + 1
+                continue
+            summary["missing"] = int(summary["missing"]) + 1
+            if not create:
+                continue
+            experiment = matching[0] if matching else self.create_experiment(name, config)
+            created = self.create_run(experiment.id)
+            created_ids = summary["created_run_ids"]
+            assert isinstance(created_ids, list)
+            created_ids.append(created.display_id)
+            if matching_runs:
+                summary["retried"] = int(summary["retried"]) + 1
+        return summary
+
     def list_runs(self) -> list[Run]:
         return self.runs.list()
 
@@ -467,3 +544,59 @@ class ApplicationService:
         path = f"{compact_run.display_id}/paired-vs-{baseline_run.display_id}.json"
         digest = self.artifacts.write_json(path, payload)
         return {**payload, "artifact_relative_path": path, "artifact_sha256": digest}
+
+    def core_sufficiency(self, model: ModelId) -> dict[str, object]:
+        """Evaluate all available Core MI k values against the matching no-selector baseline."""
+        completed: list[tuple[Run, ExperimentConfig]] = []
+        for run in self.list_runs():
+            if run.status.value == "COMPLETED":
+                completed.append((run, self.get_experiment(run.experiment_id).configuration))
+        baselines = [
+            (run, config)
+            for run, config in completed
+            if config.model is model
+            and config.selector is SelectorId.NONE
+            and config.budget_kind == "original_features"
+            and config.k_original_features == 16
+            and config.evaluation_mode == "protocol"
+        ]
+        if not baselines:
+            return {
+                "model": model.value,
+                "minimal_sufficient_k": None,
+                "status": "NOT_CALCULATED_MISSING_BASELINE",
+                "comparisons": [],
+            }
+        baseline = baselines[0][0]
+        comparisons: list[dict[str, object]] = []
+        sufficient: list[int] = []
+        for k in range(1, 16):
+            candidates = [
+                run
+                for run, config in completed
+                if config.model is model
+                and config.selector is SelectorId.MUTUAL_INFORMATION
+                and config.budget_kind == "original_features"
+                and config.k_original_features == k
+                and config.evaluation_mode == "protocol"
+                and config.dataset_version == baselines[0][1].dataset_version
+                and config.seed == baselines[0][1].seed
+                and config.search_space == baselines[0][1].search_space
+            ]
+            if not candidates:
+                comparisons.append({"k_original_features": k, "decision": "not_calculated"})
+                continue
+            result = self.compare_runs(candidates[0].id, baseline.id)["comparison"]
+            assert isinstance(result, dict)
+            comparisons.append({"k_original_features": k, **result})
+            if result["decision"] == "sufficient":
+                sufficient.append(k)
+        calculated = sum(item["decision"] != "not_calculated" for item in comparisons)
+        return {
+            "model": model.value,
+            "baseline_run_id": baseline.display_id,
+            "minimal_sufficient_k": min(sufficient) if sufficient else None,
+            "status": "CALCULATED" if calculated == 15 else "PARTIAL",
+            "calculated_comparisons": calculated,
+            "comparisons": comparisons,
+        }

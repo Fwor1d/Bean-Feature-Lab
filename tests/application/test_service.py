@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pandas as pd
 import pytest
 from sklearn.datasets import make_classification
@@ -133,3 +135,33 @@ def test_synthetic_end_to_end_persistence_roundtrip(tmp_path) -> None:
     result = service.get_run_result(queued.id)
     assert result and len(result["folds"]) == 2
     assert result["summary"]["macro_f1_mean"] == completed.summary["macro_f1_mean"]
+
+
+def test_core_enqueue_is_idempotent_and_missing_baseline_is_not_calculated(tmp_path) -> None:
+    container = create_container(f"sqlite:///{tmp_path / 'test.sqlite'}")
+    Base.metadata.create_all(container.metadata.engine)
+    service = container.service
+    assert service.datasets is not None
+    service.datasets.register(
+        {
+            "dataset_version": "uci-602-test",
+            "archive_sha256": "a" * 64,
+            "arff_sha256": "b" * 64,
+            "retrieved_at_utc": datetime.now(UTC).isoformat(),
+            "rows": 13_611,
+            "feature_count": 16,
+            "classes": ["A", "B", "C", "D", "E", "F", "G"],
+        }
+    )
+    dry = service.enqueue_core_matrix(create=False)
+    assert dry["total_conditions"] == 86
+    assert dry["missing"] == 86
+    created = service.enqueue_core_matrix(create=True)
+    assert len(created["created_run_ids"]) == 86
+    repeated = service.enqueue_core_matrix(create=True)
+    assert repeated["missing"] == 0
+    assert repeated["active"] == 86
+    assert repeated["created_run_ids"] == []
+    missing = service.core_sufficiency(ModelId.LOGISTIC_REGRESSION)
+    assert missing["status"] == "NOT_CALCULATED_MISSING_BASELINE"
+    assert missing["minimal_sufficient_k"] is None

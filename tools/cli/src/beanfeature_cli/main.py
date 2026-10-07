@@ -171,49 +171,35 @@ def compare_runs(compact_run_id: int, baseline_run_id: int) -> None:
 
 @core_app.command("enqueue-mi")
 def enqueue_core_mi(
-    confirm_compute: bool = typer.Option(False, help="Queue 86 full-protocol conditions"),
+    confirm_compute: bool = typer.Option(
+        False, help="Idempotently queue only missing Core MI/baseline conditions"
+    ),
 ) -> None:
-    if not confirm_compute:
-        typer.echo(
-            "Would queue 5×16 MI conditions plus six 16-feature baselines (86 runs). "
-            "Pass --confirm-compute."
-        )
-        raise typer.Exit(2)
     service = create_container().service
-    if not service.list_datasets():
-        typer.echo("Validate official UCI 602 dataset first", err=True)
-        raise typer.Exit(2)
+    plan = service.enqueue_core_matrix(create=confirm_compute)
+    typer.echo(json.dumps(plan, ensure_ascii=False, indent=2))
+    if not confirm_compute and plan["missing"]:
+        typer.echo("Dry run only. Pass --confirm-compute to enqueue the missing conditions.")
+
+
+@core_app.command("sufficiency")
+def core_sufficiency(model: Annotated[ModelId | None, typer.Option()] = None) -> None:
+    service = create_container().service
     models = (
-        ModelId.LOGISTIC_REGRESSION,
-        ModelId.SVM_RBF,
-        ModelId.RANDOM_FOREST,
-        ModelId.XGBOOST,
-        ModelId.LIGHTGBM,
+        [model]
+        if model
+        else [
+            ModelId.LOGISTIC_REGRESSION,
+            ModelId.SVM_RBF,
+            ModelId.RANDOM_FOREST,
+            ModelId.XGBOOST,
+            ModelId.LIGHTGBM,
+        ]
     )
-    for model in (*models, ModelId.MLP):
-        experiment = service.create_experiment(
-            f"C0 baseline {model.value}",
-            ExperimentConfig(
-                model=model,
-                selector=SelectorId.NONE,
-                budget_kind="original_features",
-                k_original_features=16,
-            ),
-        )
-        service.create_run(experiment.id)
-    for model in models:
-        for k in range(1, 17):
-            experiment = service.create_experiment(
-                f"C1 MI {model.value} k={k}",
-                ExperimentConfig(
-                    model=model,
-                    selector=SelectorId.MUTUAL_INFORMATION,
-                    budget_kind="original_features",
-                    k_original_features=k,
-                ),
-            )
-            service.create_run(experiment.id)
     typer.echo(
-        "Queued 86 protocol runs. Execute with 'beanfeature-worker' or repeated "
-        "'beanfeature runs process-next'."
+        json.dumps(
+            [service.core_sufficiency(selected) for selected in models],
+            ensure_ascii=False,
+            indent=2,
+        )
     )
