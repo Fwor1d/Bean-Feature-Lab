@@ -46,6 +46,43 @@ class DatasetResponse(BaseModel):
     arff_sha256: str | None = None
 
 
+class ClassBalanceResponse(BaseModel):
+    count: int
+    fraction: float
+
+
+class FeatureQualityResponse(BaseModel):
+    minimum: float
+    maximum: float
+    median: float
+    q1: float
+    q3: float
+    iqr: float
+    constant: bool
+    extreme_outlier_count: int
+    extreme_outlier_lower_fence: float
+    extreme_outlier_upper_fence: float
+
+
+class DatasetQualityResponse(BaseModel):
+    dataset_sha256: str
+    source_id: int
+    rows: int
+    columns: int
+    numeric_feature_count: int
+    missing_values: int
+    infinite_values: int
+    exact_duplicate_rows_involved: int
+    exact_duplicate_excess_rows: int
+    class_balance: dict[str, ClassBalanceResponse]
+    constant_columns: list[str]
+    feature_statistics: dict[str, FeatureQualityResponse]
+    outlier_method: str
+    cleaning_applied: Literal[False]
+    note: str
+    schema_notice: str
+
+
 class ExperimentConfigDTO(BaseModel):
     model: ModelId
     selector: SelectorId

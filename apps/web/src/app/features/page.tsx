@@ -1,17 +1,20 @@
 import Link from "next/link";
 import { Alert, Chip, Table, TableBody, TableCell, TableHead, TableRow } from "@mui/material";
 import { api, apiErrorMessage } from "@/lib/api/client";
-import type { DatasetManifest, RunSummary } from "@/lib/api/contracts";
+import type { DatasetManifest, DatasetQuality, RunSummary } from "@/lib/api/contracts";
 import { metric } from "@/lib/science";
 
 export default async function FeaturesPage() {
   let manifest: DatasetManifest | null = null;
   let selected: RunSummary | null = null;
+  let quality: DatasetQuality | null = null;
   let sourceRunId: number | null = null;
   let error: string | null = null;
   try {
     const [datasets, runs, experiments] = await Promise.all([api.datasets(), api.runs(), api.experiments()]);
-    if (datasets[0]) manifest = await api.datasetManifest(datasets[0].id);
+    if (datasets[0]) [manifest, quality] = await Promise.all([
+      api.datasetManifest(datasets[0].id), api.datasetQuality(datasets[0].id),
+    ]);
     const configurations = new Map(experiments.map(item => [item.id, item.configuration]));
     const source = runs.find(run => run.status === "COMPLETED" && configurations.get(run.experiment_id)?.selector === "mutual_information" && configurations.get(run.experiment_id)?.evaluation_mode === "protocol");
     if (source) { selected = await api.runSummary(source.id); sourceRunId = source.id; }
@@ -32,10 +35,24 @@ export default async function FeaturesPage() {
           <div><dt>ZIP SHA-256</dt><dd><code>{manifest.archive_sha256}</code></dd></div></dl>
         <Alert severity="info" sx={{ mt: 2 }}>{manifest.schema_notice}</Alert>
       </section>
+      {quality && <section className="section-surface" aria-labelledby="quality-title">
+        <h2 id="quality-title" className="section-title">Качество исходных данных</h2>
+        <dl className="detail-list">
+          <div><dt>Пропуски / Inf</dt><dd>{quality.missing_values} / {quality.infinite_values}</dd></div>
+          <div><dt>Точные дубликаты</dt><dd>{quality.exact_duplicate_excess_rows} избыточных строк · {quality.exact_duplicate_rows_involved} строк вовлечено</dd></div>
+          <div><dt>Константные столбцы</dt><dd>{quality.constant_columns.length ? quality.constant_columns.join(", ") : "нет"}</dd></div>
+          <div><dt>Обработка</dt><dd>Не применялась; это диагностический отчёт</dd></div>
+        </dl>
+        <p className="table-note">Баланс классов: {Object.entries(quality.class_balance).map(([label, item]) => `${label} ${item.count} (${(item.fraction * 100).toFixed(1)}%)`).join(" · ")}.</p>
+        <p className="table-note">{quality.outlier_method}. Экстремальные значения не удаляются и не обрезаются.</p>
+      </section>}
       <section className="table-surface" aria-labelledby="features-title">
         <div className="table-heading"><h2 id="features-title">Исходные признаки</h2><span className="table-note">Имена строго из официального ARFF · без переименования</span></div>
         {frequency && sourceRunId && <p className="empty-copy">Частота отбора из <Link href={`/runs/${sourceRunId}`}>{selected?.run_id}</Link> · {selected?.summary?.outer_fold_count} outer folds. Это описательная частота, не значение важности.</p>}
-        <Table size="small" aria-label="Канонические имена признаков"><TableHead><TableRow><TableCell>№</TableCell><TableCell>Исходный атрибут</TableCell><TableCell align="right">Частота отбора</TableCell></TableRow></TableHead><TableBody>{manifest.features.map((name, index) => <TableRow key={name}><TableCell>{index + 1}</TableCell><TableCell>{name}</TableCell><TableCell align="right">{frequency ? metric(frequency[name], 2) : "Не рассчитано"}</TableCell></TableRow>)}</TableBody></Table>
+        <Table size="small" aria-label="Канонические имена признаков"><TableHead><TableRow><TableCell>№</TableCell><TableCell>Исходный атрибут</TableCell><TableCell align="right">Наблюдаемый диапазон</TableCell><TableCell align="right">Экстремальные</TableCell><TableCell align="right">Частота отбора</TableCell></TableRow></TableHead><TableBody>{manifest.features.map((name, index) => {
+          const stats = quality?.feature_statistics[name];
+          return <TableRow key={name}><TableCell>{index + 1}</TableCell><TableCell>{name}</TableCell><TableCell align="right">{stats ? `${stats.minimum.toLocaleString("ru-RU")} … ${stats.maximum.toLocaleString("ru-RU")}` : "Не рассчитано"}</TableCell><TableCell align="right">{stats?.extreme_outlier_count ?? "Не рассчитано"}</TableCell><TableCell align="right">{frequency ? metric(frequency[name], 2) : "Не рассчитано"}</TableCell></TableRow>;
+        })}</TableBody></Table>
       </section>
     </> : !error && <section className="section-surface"><h2 className="section-title">Датасет не зарегистрирован</h2><p>Проверьте официальный UCI 602 через CLI; сведения появятся после строгой validation.</p></section>}
     <p className="scientific-footnote">PCA-компоненты не являются подмножеством исходных измеряемых признаков. Корреляции, importance и другие представления здесь не подменяются вымышленными данными.</p>

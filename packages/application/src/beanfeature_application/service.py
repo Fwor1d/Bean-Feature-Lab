@@ -14,6 +14,7 @@ from beanfeature_research.contracts import (
     PCARepresentation,
     SelectorId,
 )
+from beanfeature_research.dataset import dataset_quality_summary
 from beanfeature_research.engine import (
     EngineCondition,
     NestedResult,
@@ -358,6 +359,23 @@ class ApplicationService:
             raise RuntimeError("Dataset infrastructure is unavailable")
         _, manifest = self.dataset_store.load()
         return manifest
+
+    def dataset_quality(self, dataset_id: int) -> dict[str, object]:
+        registered = next(
+            (item for item in self.list_datasets() if int(item["id"]) == dataset_id), None
+        )
+        if registered is None:
+            raise NotFoundError(f"Dataset {dataset_id} not found")
+        if not self.dataset_store:
+            raise RuntimeError("Dataset storage is unavailable")
+        dataset, manifest = self.dataset_store.load()
+        if dataset.arff_sha256 != registered["arff_sha256"]:
+            raise ValueError("Registered dataset hash does not match validated source")
+        return {
+            **dataset_quality_summary(dataset),
+            "source_id": manifest["source_id"],
+            "schema_notice": manifest["schema_notice"],
+        }
 
     def recover_interrupted_runs(self) -> int:
         return self.runs.recover_running()

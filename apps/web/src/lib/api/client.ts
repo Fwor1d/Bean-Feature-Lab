@@ -1,5 +1,5 @@
 import type {
-  ClassifierModel, ClassifierPrediction, CoreSufficiency, Dataset, DatasetManifest, Experiment, FeatureBudgetPoint, FoldResult, PairedComparison,
+  ClassifierModel, ClassifierPrediction, CoreSufficiency, Dataset, DatasetManifest, DatasetQuality, Experiment, FeatureBudgetPoint, FoldResult, PairedComparison,
   Project, Run, RunDetail, RunSummary, SystemInfo,
 } from "./contracts";
 
@@ -34,6 +34,7 @@ export const api = {
   projects: () => request<Project[]>("/api/v1/projects"),
   datasets: () => request<Dataset[]>("/api/v1/datasets"),
   datasetManifest: (id: number) => request<DatasetManifest>(`/api/v1/datasets/${id}/manifest`),
+  datasetQuality: (id: number) => request<DatasetQuality>(`/api/v1/datasets/${id}/quality`),
   classifierModel: () => request<ClassifierModel>("/api/v1/classifier/model"),
   classifierExample: () => request<{ features: Record<string, number> }>("/api/v1/classifier/example"),
   predict: (features: Record<string, number>) => request<ClassifierPrediction>("/api/v1/classifier/predict", {

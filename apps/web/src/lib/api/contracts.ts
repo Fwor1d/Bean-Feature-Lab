@@ -81,6 +81,36 @@ export interface DatasetManifest {
   official_schema_acknowledged: boolean;
 }
 
+export interface DatasetQuality {
+  dataset_sha256: string;
+  source_id: number;
+  rows: number;
+  columns: number;
+  numeric_feature_count: number;
+  missing_values: number;
+  infinite_values: number;
+  exact_duplicate_rows_involved: number;
+  exact_duplicate_excess_rows: number;
+  class_balance: Record<string, { count: number; fraction: number }>;
+  constant_columns: string[];
+  feature_statistics: Record<string, {
+    minimum: number;
+    maximum: number;
+    median: number;
+    q1: number;
+    q3: number;
+    iqr: number;
+    constant: boolean;
+    extreme_outlier_count: number;
+    extreme_outlier_lower_fence: number;
+    extreme_outlier_upper_fence: number;
+  }>;
+  outlier_method: string;
+  cleaning_applied: false;
+  note: string;
+  schema_notice: string;
+}
+
 export interface ClassifierModel {
   model_id: string;
   model_family: string;

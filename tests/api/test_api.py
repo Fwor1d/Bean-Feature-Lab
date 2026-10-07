@@ -81,6 +81,7 @@ def test_validation_and_not_found_contracts(api_client) -> None:
     assert invalid.json()["error"]["code"] == "invalid_configuration"
     assert api_client.get("/api/v1/runs/999").json()["error"]["code"] == "not_found"
     assert api_client.get("/api/v1/datasets/999/manifest").json()["error"]["code"] == "not_found"
+    assert api_client.get("/api/v1/datasets/999/quality").json()["error"]["code"] == "not_found"
 
 
 def test_public_demo_is_read_only(monkeypatch, tmp_path) -> None:

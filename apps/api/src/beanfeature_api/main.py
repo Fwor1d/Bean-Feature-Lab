@@ -16,6 +16,7 @@ from beanfeature_research.contracts import ModelId
 from .schemas import (
     CoreSufficiencyResponse,
     CreateExperimentRequest,
+    DatasetQualityResponse,
     DatasetResponse,
     ErrorResponse,
     ExperimentResponse,
@@ -128,6 +129,10 @@ def create_app(database_url: str | None = None) -> FastAPI:
     @application.get("/api/v1/datasets/{dataset_id}/manifest")
     def dataset_manifest(dataset_id: int, service: Service):
         return service.get_dataset_manifest(dataset_id)
+
+    @application.get("/api/v1/datasets/{dataset_id}/quality", response_model=DatasetQualityResponse)
+    def dataset_quality(dataset_id: int, service: Service) -> DatasetQualityResponse:
+        return DatasetQualityResponse.model_validate(service.dataset_quality(dataset_id))
 
     @application.get("/api/v1/classifier/model")
     def classifier_model(service: Service):

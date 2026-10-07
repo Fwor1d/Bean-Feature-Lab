@@ -55,6 +55,13 @@ def list_datasets() -> None:
     typer.echo(json.dumps(create_container().service.list_datasets(), ensure_ascii=False, indent=2))
 
 
+@dataset_app.command("quality")
+def dataset_quality(dataset_id: Annotated[int, typer.Option()] = 1) -> None:
+    """Report source quality diagnostics without modifying the validated dataset."""
+    quality = create_container().service.dataset_quality(dataset_id)
+    typer.echo(json.dumps(quality, ensure_ascii=False, indent=2))
+
+
 @system_app.command("info")
 def system_info() -> None:
     container = create_container()
