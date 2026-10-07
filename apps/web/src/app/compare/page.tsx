@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/ClientLink";
 import { Alert, Button, Chip, Stack, Table, TableBody, TableCell, TableHead, TableRow } from "@mui/material";
 import { ComparisonSelector, type ComparisonOption } from "@/components/ComparisonSelector";
 import { DescriptiveComparisonSelector, type DescriptiveRunOption } from "@/components/DescriptiveComparisonSelector";

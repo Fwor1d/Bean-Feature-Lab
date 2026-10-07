@@ -55,6 +55,7 @@ export default async function RunDetailPage({ params, searchParams }: {
           {scientific.observed_nonzero_feature_counts?.length ? <p className="table-note">L1 sparse path: фактическое число ненулевых исходных признаков по outer folds — {scientific.observed_nonzero_feature_counts.join(", ")}. Это наблюдаемая sparsity, а не fixed-k budget.</p> : null}
           <p className="table-note">Разброс Macro-F1 по зависимым folds (описательный SD): {metric(scientific.macro_f1_fold_sd_descriptive)}. {scientific.dispersion_note}</p>
           <p className="table-note">Протокол: {scientific.cv_protocol_version} · seed {scientific.seed}. PCA-компоненты не считаются исходными признаками.</p>
+          <p className="table-note">Sufficient-k в этой сводке — поле исходного immutable artifact. Позднее рассчитанные paired decisions сохранены отдельно: <Link href={`/feature-budget?model=${scientific.model}`}>открыть Core MI sufficient-k анализ</Link>. Старый результат не перезаписывается.</p>
         </> : <p>Не рассчитано. Полные outer folds ещё не сохранены.</p>}
       </section>
       {detail && <section className="section-surface stack-section" aria-labelledby="provenance-title">

@@ -38,7 +38,7 @@ body { font-family: "Golos Text", Arial, sans-serif; }
 .plot-empty { position: absolute; inset: 0; pointer-events: none; display: grid; place-content: center; text-align: center; padding-left: 42px; padding-bottom: 10px; }
 .plot-empty strong { color: #647283; font-size: 24px; font-weight: 600; }
 .plot-empty span { color: #637082; font-size: 13px; margin-top: 8px; }
-.table-surface { margin-top: 14px; }
+.table-surface { margin-top: 14px; overflow-x: auto; max-width: 100%; }
 .table-heading { padding: 14px 16px; border-bottom: 1px solid #dce3ea; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .table-note { color: #667585; font-size: 12px; }
 .grid-scroll-note { display: none; margin: 6px 12px; color: #526170; font-size: 12px; }
@@ -89,7 +89,7 @@ body { font-family: "Golos Text", Arial, sans-serif; }
   .brand-sub, .top-context { display: none; }
   .figure-surface { padding: 12px 10px; }
   .page-heading { font-size: 21px; }
-  .figure-frame { height: 370px; }
+  .figure-frame { height: 440px; }
   .plot-empty { padding-left: 10px; }
   .plot-empty strong { font-size: 19px; }
   .context-mobile-state { display: block; color: #d6e0e9; font-size: 12px; line-height: 1.8; padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid #4c5762; }

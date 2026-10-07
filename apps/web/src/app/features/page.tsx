@@ -44,15 +44,17 @@ export default async function FeaturesPage({ searchParams }: { searchParams: Pro
       <section className="section-surface" aria-labelledby="dataset-title">
         <h2 id="dataset-title" className="section-title">{manifest.source} · ID {manifest.source_id}</h2>
         <div className="status-line"><Chip label="Валидация пройдена" color="success" size="small" variant="outlined" /><span>{manifest.rows.toLocaleString("ru-RU")} объектов · {manifest.feature_count} численных признаков · {manifest.classes.length} классов · {manifest.missing_values} пропусков</span></div>
+        <details><summary>Источник, каноническая схема и hashes</summary>
         <p className="table-note">Целевой столбец: {manifest.target}. Классы: {manifest.classes.join(", ")}.</p>
         <dl className="detail-list"><div><dt>Источник</dt><dd><a href={manifest.source_url} target="_blank" rel="noreferrer">Официальный UCI 602</a> · получен {new Date(manifest.retrieved_at_utc).toLocaleString("ru-RU", { timeZone: "UTC" })} UTC</dd></div>
           <div><dt>Dataset version</dt><dd><code>{manifest.dataset_version}</code></dd></div>
           <div><dt>ARFF SHA-256</dt><dd><code>{manifest.arff_sha256}</code></dd></div>
           <div><dt>ZIP SHA-256</dt><dd><code>{manifest.archive_sha256}</code></dd></div></dl>
         <Alert severity="info" sx={{ mt: 2 }}>{manifest.schema_notice}</Alert>
+        </details>
       </section>
       {quality && <section className="section-surface" aria-labelledby="quality-title">
-        <h2 id="quality-title" className="section-title">Качество исходных данных</h2>
+        <details><summary id="quality-title">Качество исходных данных · диагностический отчёт</summary>
         <dl className="detail-list">
           <div><dt>Пропуски / Inf</dt><dd>{quality.missing_values} / {quality.infinite_values}</dd></div>
           <div><dt>Точные дубликаты</dt><dd>{quality.exact_duplicate_excess_rows} избыточных строк · {quality.exact_duplicate_rows_involved} строк вовлечено</dd></div>
@@ -61,6 +63,7 @@ export default async function FeaturesPage({ searchParams }: { searchParams: Pro
         </dl>
         <p className="table-note">Баланс классов: {Object.entries(quality.class_balance).map(([label, item]) => `${label} ${item.count} (${(item.fraction * 100).toFixed(1)}%)`).join(" · ")}.</p>
         <p className="table-note">{quality.outlier_method}. Экстремальные значения не удаляются и не обрезаются.</p>
+        </details>
       </section>}
       <section className="table-surface" aria-labelledby="features-title">
         <div className="table-heading"><h2 id="features-title">Исходные признаки</h2><span className="table-note">Имена строго из официального ARFF · без переименования</span></div>

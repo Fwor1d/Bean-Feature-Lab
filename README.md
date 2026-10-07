@@ -100,3 +100,5 @@ Scaling, selection/PCA, hyperparameter search and fitting occur inside the relev
 - `/classifier` — active deployment model, UCI examples, probabilities and session-only history.
 
 Runtime datasets, SQLite state, models and scientific artifacts are intentionally ignored by Git. Versioned protocol/configuration files and migrations are committed; reported numbers must remain traceable to verified runtime artifacts.
+
+Operational details: [local research, reproduction, classifier and hosting](docs/operations/LOCAL_WORKFLOW.md). The [bounded Core UI audit](docs/design/CORE_AUDIT.md) records verified fixes and remaining coverage limits.

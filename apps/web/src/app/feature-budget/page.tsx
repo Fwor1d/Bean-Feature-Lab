@@ -29,6 +29,22 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
   const selectedModel = query.model ?? "all";
   const requestedSelector = query.selector as SelectorId | undefined;
   const selectedSelector: SelectorId = pca ? "pca" : requestedSelector && originalSelectors.includes(requestedSelector) ? requestedSelector : "mutual_information";
+  const sparse = selectedSelector === "l1_logistic";
+  const sparseCandidates = runs.filter(run => {
+    const config = experimentById.get(run.experiment_id)?.configuration;
+    return run.status === "COMPLETED" && config?.selector === "l1_logistic" &&
+      config.budget_kind === "sparse_original_features" &&
+      (selectedModel === "all" || config.model === selectedModel);
+  });
+  const sparseResults = sparse ? await Promise.allSettled(sparseCandidates.map(async run => {
+    const config = experimentById.get(run.experiment_id)!.configuration;
+    const result = await api.runSummary(run.id);
+    return result.summary?.evaluation_mode === "protocol" ? { run, config, summary: result.summary } : null;
+  })) : [];
+  const sparseFailure = sparseResults.find(item => item.status === "rejected");
+  if (sparseFailure?.status === "rejected") error = apiErrorMessage(sparseFailure.reason);
+  const sparseRows = sparseResults.flatMap(item => item.status === "fulfilled" && item.value ? [item.value] : [])
+    .sort((left, right) => Number(left.config.selector_configuration?.C) - Number(right.config.selector_configuration?.C));
   const selectedBudgetKind = pca ? "pca_components" : "original_features";
   const eligiblePoints = series.filter(point => point.budget_kind === selectedBudgetKind &&
     point.selector === selectedSelector && (selectedModel === "all" || point.model === selectedModel));
@@ -75,9 +91,9 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
   const expectedPoints = expectedBudgetConditions(selectedSelector);
   const partial = expectedPoints != null && points.length > 0 && [...perModel.values()].some(budgets => budgets.size < expectedPoints);
   const measured = [...perModel.entries()].map(([model, budgets]) => `${modelLabel[model as FeatureBudgetPoint["model"]]}: ${budgets.size}/${expectedPoints ?? "variable"}`).join(" · ");
-  const visibleModels = new Set(points.map(point => point.model));
   const visibleSufficiency = selectedSelector === "mutual_information" && !pca
-    ? sufficiency.filter(item => visibleModels.has(item.model)) : [];
+    ? sufficiency.filter(item => points.some(point => point.model === item.model &&
+      point.dataset_hash === item.dataset_hash && point.outer_split_set_sha256 === item.outer_split_set_sha256)) : [];
   const sufficientMarkers = visibleSufficiency.flatMap(item => item.minimal_sufficient_k == null
     ? [] : [{ model: item.model, k: item.minimal_sufficient_k }]);
   return <>
@@ -92,18 +108,23 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
       })}
     </Alert>}
     {partial && <Alert severity="info" sx={{ mb: 2 }}>Частичные результаты · {measured}. Линии между точками не строятся.</Alert>}
-    {!error && points.length === 0 && <Alert severity="info" sx={{ mb: 2 }}>Для выбранного фильтра нет завершённых full-protocol условий. Smoke runs и queued/running conditions не входят в научную фигуру.</Alert>}
-    <section className="figure-surface" aria-labelledby="figure-title">
+    {!error && (sparse ? sparseRows.length === 0 : points.length === 0) && <Alert severity="info" sx={{ mb: 2 }}>Для выбранного фильтра нет завершённых full-protocol условий. Smoke runs и queued/running conditions не входят в научную фигуру.</Alert>}
+    {sparse && <section className="table-surface" aria-labelledby="sparse-title">
+      <div className="table-heading"><h2 id="sparse-title">L1 · sparse path</h2><Chip label={`${sparseRows.length} завершённых условий`} size="small" variant="outlined" /></div>
+      <p className="table-note">C управляет регуляризацией fold-local L1 selector. Число ненулевых исходных признаков меняется между outer folds: это не fixed-k curve. Условия не объединяются в кривую; точная конфигурация и split hash доступны в каждом run.</p>
+      <Table size="small" aria-label="Реальные результаты L1 sparse path"><TableHead><TableRow><TableCell>C selector</TableCell><TableCell>Run</TableCell><TableCell>Ненулевых признаков · 15 folds</TableCell><TableCell align="right">Macro-F1</TableCell><TableCell align="right">Accuracy</TableCell><TableCell align="right">Jaccard</TableCell></TableRow></TableHead><TableBody>{sparseRows.map(({ run, config, summary }) => <TableRow key={run.id}><TableCell>{String(config.selector_configuration?.C ?? "—")}</TableCell><TableCell><Link href={`/runs/${run.id}`}>{run.display_id}</Link></TableCell><TableCell>{summary.observed_nonzero_feature_counts?.join(", ") ?? "Не рассчитано"}</TableCell><TableCell align="right">{metric(summary.macro_f1_mean)}</TableCell><TableCell align="right">{metric(summary.accuracy_mean)}</TableCell><TableCell align="right">{metric(summary.feature_stability?.pairwise_jaccard_mean ?? null)}</TableCell></TableRow>)}</TableBody></Table>
+    </section>}
+    {!sparse && <section className="figure-surface" aria-labelledby="figure-title">
       <div className="figure-heading"><h2 id="figure-title">Macro-F1 · {pca ? "PCA components" : "исходные признаки"} · {selectorLabel[selectedSelector]}</h2>
         <Chip label={!points.length ? "Не рассчитано" : partial ? "Частичные результаты" : "Рассчитано"} size="small" variant="outlined" />
       </div>
       {!points.length ? <EmptyPlot pca={pca} /> : <ScientificPlot points={points} baselines={baselines.map(item => ({ runId: item.run.display_id, model: item.model, macroF1: item.macroF1 }))} sufficient={sufficientMarkers} />}
       <p className="table-note">{pca ? `Только реально завершённые PCA conditions; components не являются физическими признаками. Набор: ${selectedCohort ? `${selectedCohort.slice(0, 12)}…` : "не рассчитано"}.` : `Только сохранённые значения; ромб — сопоставимый baseline, зелёное кольцо — минимальное sufficient k только для Core MI. Контрольные comparator points не интерполируются. Набор: ${selectedCohort ? `${selectedCohort.slice(0, 12)}… · outer ${selectedCohort.slice(65, 77)}…` : "не рассчитано"}.`}</p>
-    </section>
-    <section className="table-surface" aria-labelledby="table-title">
+    </section>}
+    {!sparse && <section className="table-surface" aria-labelledby="table-title">
       <div className="table-heading"><h2 id="table-title">Завершённые условия</h2><span className="table-note">{rows.length} записей · Accuracy из того же run</span></div>
       <BudgetResultsGrid rows={rows} budgetHeader={pca ? "PCA components" : "Исходных признаков"} />
-    </section>
+    </section>}
     {visibleSufficiency.length > 0 && <section className="table-surface" aria-labelledby="sufficiency-title">
       <div className="table-heading"><h2 id="sufficiency-title">Paired sufficient-k analysis</h2><span className="table-note">Corrected one-sided upper bound · margin 0,01</span></div>
       <Table size="small" aria-label="Результаты sufficient-k по моделям"><TableHead><TableRow><TableCell>Модель</TableCell><TableCell align="right">Минимальное k</TableCell><TableCell align="right">Средняя потеря</TableCell><TableCell align="right">Upper bound</TableCell><TableCell>Baseline</TableCell></TableRow></TableHead><TableBody>{visibleSufficiency.map(item => {
@@ -111,6 +132,6 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
         return <TableRow key={item.model}><TableCell>{modelLabel[item.model]}</TableCell><TableCell align="right">{item.minimal_sufficient_k ?? "не установлено"}</TableCell><TableCell align="right">{metric(comparison?.mean_loss ?? null, 5)}</TableCell><TableCell align="right">{metric(comparison?.one_sided_upper_confidence_bound ?? null, 5)}</TableCell><TableCell>{item.baseline_run_id ? <Link href={`/runs/${Number(item.baseline_run_id.slice(4))}`}>{item.baseline_run_id}</Link> : "—"}</TableCell></TableRow>;
       })}</TableBody></Table>
     </section>}
-    <p className="scientific-footnote">Критерий: paired loss относительно baseline той же модели, margin 0,01; one-sided Nadeau–Bengio corrected interval с Bonferroni 0,05/15. {visibleSufficiency.length ? visibleSufficiency.map(item => `${modelLabel[item.model]}: ${item.status === "CALCULATED" ? item.minimal_sufficient_k ?? "не установлено" : item.status === "PARTIAL" ? `частично (${item.calculated_comparisons}/15)` : "не рассчитано"}`).join(" · ") : "Для выбранных моделей решений нет."}</p>
+    {!sparse && <p className="scientific-footnote">Критерий: paired loss относительно baseline той же модели, margin 0,01; one-sided Nadeau–Bengio corrected interval с Bonferroni 0,05/15. {visibleSufficiency.length ? visibleSufficiency.map(item => `${modelLabel[item.model]}: ${item.status === "CALCULATED" ? item.minimal_sufficient_k ?? "не установлено" : item.status === "PARTIAL" ? `частично (${item.calculated_comparisons}/15)` : "не рассчитано"}`).join(" · ") : "Для выбранных моделей решений нет."}</p>}
   </>;
 }
