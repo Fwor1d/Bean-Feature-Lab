@@ -263,8 +263,11 @@ class RunResourcesResponse(BaseModel):
 class FeatureBudgetPointResponse(BaseModel):
     run_id: str
     model: ModelId
-    budget_kind: Literal["original_features"]
-    k_original_features: int
+    selector: SelectorId
+    budget_kind: Literal["original_features", "pca_components"]
+    k_original_features: int | None
+    n_components: int | None
+    budget_value: int
     macro_f1_mean: float
     accuracy_mean: float
     macro_f1_fold_sd_descriptive: float | None

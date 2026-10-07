@@ -1110,6 +1110,7 @@ class ApplicationService:
         }
 
     def feature_budget_series(self) -> list[dict[str, object]]:
+        """Expose fixed-budget original-feature and PCA conditions without interpolation."""
         points = []
         for run in self.list_runs():
             summary = run.summary
@@ -1117,15 +1118,34 @@ class ApplicationService:
                 continue
             if (
                 summary.get("evaluation_mode") != "protocol"
-                or summary.get("selector") != "mutual_information"
+                or summary.get("budget_kind") not in {"original_features", "pca_components"}
+                or summary.get("selector")
+                not in {
+                    "mutual_information",
+                    "anova",
+                    "rfe",
+                    "tree_importance",
+                    "pca",
+                }
             ):
+                continue
+            budget_kind = summary["budget_kind"]
+            budget_value = (
+                summary["k_original_features"]
+                if budget_kind == "original_features"
+                else summary["n_components"]
+            )
+            if not isinstance(budget_value, int):
                 continue
             points.append(
                 {
                     "run_id": run.display_id,
                     "model": summary["model"],
-                    "budget_kind": summary["budget_kind"],
+                    "selector": summary["selector"],
+                    "budget_kind": budget_kind,
                     "k_original_features": summary["k_original_features"],
+                    "n_components": summary["n_components"],
+                    "budget_value": budget_value,
                     "macro_f1_mean": summary["macro_f1_mean"],
                     "accuracy_mean": summary["accuracy_mean"],
                     "macro_f1_fold_sd_descriptive": summary["macro_f1_fold_sd_descriptive"],

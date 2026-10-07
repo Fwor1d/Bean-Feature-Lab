@@ -25,9 +25,10 @@ const columns: GridColDef<BudgetRow>[] = [
   { field: "condition", headerName: "Условие", minWidth: 185, flex: 1 },
 ];
 
-export function BudgetResultsGrid({ rows }: { rows: BudgetRow[] }) {
+export function BudgetResultsGrid({ rows, budgetHeader = "Исходных признаков" }: { rows: BudgetRow[]; budgetHeader?: string }) {
+  const visibleColumns = columns.map(column => column.field === "k" ? { ...column, headerName: budgetHeader } : column);
   return <Box sx={{ width: "100%", minHeight: 170 }}><p className="grid-scroll-note">Для остальных колонок прокрутите таблицу вправо →</p>
-    <DataGrid rows={rows} columns={columns} density="compact" disableRowSelectionOnClick
+    <DataGrid rows={rows} columns={visibleColumns} density="compact" disableRowSelectionOnClick
       initialState={{ pagination: { paginationModel: { pageSize: 10 } } }} pageSizeOptions={[10, 25, 50]}
       localeText={{ noRowsLabel: "Нет рассчитанных условий для этого представления" }}
       sx={{ border: 0, "& .MuiDataGrid-cell": { fontVariantNumeric: "tabular-nums" } }} />

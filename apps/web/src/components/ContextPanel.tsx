@@ -74,7 +74,7 @@ function BudgetContext() {
             <MenuItem value="mutual_information">Mutual Information</MenuItem><MenuItem value="anova">ANOVA</MenuItem><MenuItem value="rfe">RFE</MenuItem><MenuItem value="l1_logistic">L1 Logistic</MenuItem><MenuItem value="tree_importance">Tree importance</MenuItem><MenuItem value="pca">PCA</MenuItem>
           </Select>
         </FormControl>
-        <p className="context-copy">Фильтр меняет только вид. Для методов вне MI-серии сейчас нет графика; конфигурацию run он не меняет.</p>
+        <p className="context-copy">Фильтр показывает только реальные завершённые conditions. Comparator-методы используют заранее утверждённые контрольные точки; отсутствующие точки не интерполируются.</p>
       </div>
       <div className="context-group">
         <p className="context-label">Классификатор · фильтр результатов</p>

@@ -3,8 +3,8 @@
 import dynamic from "next/dynamic";
 import { useMediaQuery } from "@mui/material";
 import type { Data, Layout } from "plotly.js";
-import type { FeatureBudgetPoint, ModelId } from "@/lib/api/contracts";
-import { modelLabel } from "@/lib/science";
+import type { FeatureBudgetPoint, ModelId, SelectorId } from "@/lib/api/contracts";
+import { modelLabel, selectorLabel } from "@/lib/science";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -20,11 +20,12 @@ export function ScientificPlot({ points, baselines, sufficient }: {
   }
   const colors = ["#255a91", "#9a5a1c", "#2e735f", "#785391", "#a5414b"];
   const traces: Data[] = [...byModel.entries()].map(([model, unsorted], index) => {
-    const values = [...unsorted].sort((a, b) => a.k_original_features - b.k_original_features);
-    const complete = values.length === 16 && values.every((point, pointIndex) => point.k_original_features === pointIndex + 1);
+    const values = [...unsorted].sort((a, b) => a.budget_value - b.budget_value);
+    const complete = values.length === 16 && values.every((point, pointIndex) => point.budget_value === pointIndex + 1);
+    const selector = values[0]?.selector as SelectorId;
     return {
-      type: "scatter", mode: complete ? "lines+markers" : "markers", name: `${modelLabel[model as FeatureBudgetPoint["model"]]} · MI`,
-      x: values.map(point => point.k_original_features), y: values.map(point => point.macro_f1_mean),
+      type: "scatter", mode: complete ? "lines+markers" : "markers", name: `${modelLabel[model as FeatureBudgetPoint["model"]]} · ${selectorLabel[selector]}`,
+      x: values.map(point => point.budget_value), y: values.map(point => point.macro_f1_mean),
       customdata: values.map(point => point.run_id),
       line: { width: 1.5, color: colors[index % colors.length] },
       marker: { size: 9, color: colors[index % colors.length], symbol: "circle" },
@@ -38,7 +39,7 @@ export function ScientificPlot({ points, baselines, sufficient }: {
     hovertemplate: "16 исходных признаков<br>Macro-F1=%{y:.4f}<br>%{customdata}<extra>Baseline</extra>",
   });
   for (const result of sufficient) {
-    const point = points.find(item => item.model === result.model && item.k_original_features === result.k);
+    const point = points.find(item => item.model === result.model && item.budget_value === result.k);
     if (!point) continue;
     traces.push({
       type: "scatter", mode: "markers", name: `${modelLabel[result.model]} · мин. достаточное k`,
@@ -47,11 +48,12 @@ export function ScientificPlot({ points, baselines, sufficient }: {
       hovertemplate: "Минимальное sufficient k=%{x}<br>Macro-F1=%{y:.4f}<br>%{customdata}<extra></extra>",
     });
   }
+  const pca = points[0]?.budget_kind === "pca_components";
   const layout: Partial<Layout> = {
     autosize: true, paper_bgcolor: "#ffffff", plot_bgcolor: "#ffffff",
     font: { family: "Golos Text, Arial, sans-serif", size: 12, color: "#35465c" },
     margin: { l: 72, r: 20, t: 20, b: 82 },
-    xaxis: { title: { text: "Число исходных признаков k" }, range: [0.5, 16.5],
+    xaxis: { title: { text: pca ? "Число PCA components" : "Число исходных признаков k" }, range: [0.5, 16.5],
       tickmode: narrow ? "array" : "linear", tickvals: narrow ? [1, 4, 8, 12, 16] : undefined,
       tick0: 1, dtick: 1, gridcolor: "#e5ebf2", zeroline: false, linecolor: "#7c8999" },
     yaxis: { title: { text: "Macro-F1" }, autorange: true, tickformat: ".2f",
@@ -59,7 +61,7 @@ export function ScientificPlot({ points, baselines, sufficient }: {
     legend: { orientation: "h", x: 0, y: -0.2, font: { size: 11 } },
     showlegend: traces.length > 0,
   };
-  return <div className="figure-frame" role="img" aria-label={`Реальные точки Macro-F1: ${points.length} условий MI, ${baselines.length} baseline. Линии строятся только для полностью рассчитанных рядов k=1…16.`}>
+  return <div className="figure-frame" role="img" aria-label={`Реальные точки Macro-F1: ${points.length} условий, ${baselines.length} baseline. Линии строятся только для полностью рассчитанных рядов 1…16.`}>
     <Plot data={traces} layout={layout} config={{ displayModeBar: false, responsive: true }} useResizeHandler style={{ width: "100%", height: "100%" }} />
     {!traces.length && <div className="plot-empty"><strong>Не рассчитано</strong><span>Научных серий пока нет</span></div>}
   </div>;

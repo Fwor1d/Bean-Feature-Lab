@@ -231,8 +231,11 @@ export interface FeatureStability {
 export interface FeatureBudgetPoint {
   run_id: string;
   model: ModelId;
-  budget_kind: "original_features";
-  k_original_features: number;
+  selector: SelectorId;
+  budget_kind: "original_features" | "pca_components";
+  k_original_features: number | null;
+  n_components: number | null;
+  budget_value: number;
   macro_f1_mean: number;
   accuracy_mean: number;
   macro_f1_fold_sd_descriptive: number | null;

@@ -5,7 +5,7 @@ import { EmptyPlot } from "@/components/EmptyPlot";
 import { ScientificPlot } from "@/components/ScientificPlot";
 import { api, apiErrorMessage } from "@/lib/api/client";
 import type { CoreSufficiency, Experiment, FeatureBudgetPoint, Run } from "@/lib/api/contracts";
-import { budgetCohorts, metric, modelLabel } from "@/lib/science";
+import { budgetCohorts, metric, modelLabel, selectorLabel } from "@/lib/science";
 
 type Query = { budget?: string; model?: string; selector?: string; cohort?: string };
 
@@ -26,10 +26,10 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
   const experimentById = new Map(experiments.map(item => [item.id, item]));
   const runByDisplayId = new Map(runs.map(item => [item.display_id, item]));
   const selectedModel = query.model ?? "all";
-  const selectedSelector = query.selector ?? "mutual_information";
-  const eligiblePoints = pca || selectedSelector !== "mutual_information" ? [] : series.filter(point =>
-    point.budget_kind === "original_features" && (selectedModel === "all" || point.model === selectedModel)
-  );
+  const selectedSelector = pca ? "pca" : query.selector ?? "mutual_information";
+  const selectedBudgetKind = pca ? "pca_components" : "original_features";
+  const eligiblePoints = series.filter(point => point.budget_kind === selectedBudgetKind &&
+    point.selector === selectedSelector && (selectedModel === "all" || point.model === selectedModel));
   // A curve may contain only conditions evaluated on the same data and frozen outer splits.
   const cohortEntries = budgetCohorts(eligiblePoints);
   const cohorts = new Map(cohortEntries);
@@ -55,7 +55,7 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
   const baselines = baselineChecks.filter((item): item is NonNullable<typeof item> => item !== null);
   const rows: BudgetRow[] = points.map(point => ({
     id: point.run_id, runId: runByDisplayId.get(point.run_id)?.id ?? Number(point.run_id.slice(4)),
-    model: point.model, condition: "Mutual Information", k: point.k_original_features,
+    model: point.model, condition: selectorLabel[point.selector], k: point.budget_value,
     macroF1: point.macro_f1_mean, accuracy: point.accuracy_mean,
   }));
   rows.push(...baselines.map(item => ({
@@ -67,20 +67,22 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
   const perModel = new Map<string, Set<number>>();
   for (const point of points) {
     const budgets = perModel.get(point.model) ?? new Set<number>();
-    budgets.add(point.k_original_features);
+    budgets.add(point.budget_value);
     perModel.set(point.model, budgets);
   }
-  const partial = !pca && points.length > 0 && [...perModel.values()].some(budgets => budgets.size < 16);
-  const measured = [...perModel.entries()].map(([model, budgets]) => `${modelLabel[model as FeatureBudgetPoint["model"]]}: ${budgets.size}/16`).join(" · ");
+  const expectedPoints = ["anova", "rfe", "tree_importance"].includes(selectedSelector) ? 6 : 16;
+  const partial = points.length > 0 && [...perModel.values()].some(budgets => budgets.size < expectedPoints);
+  const measured = [...perModel.entries()].map(([model, budgets]) => `${modelLabel[model as FeatureBudgetPoint["model"]]}: ${budgets.size}/${expectedPoints}`).join(" · ");
   const visibleModels = new Set(points.map(point => point.model));
-  const visibleSufficiency = sufficiency.filter(item => visibleModels.has(item.model));
+  const visibleSufficiency = selectedSelector === "mutual_information" && !pca
+    ? sufficiency.filter(item => visibleModels.has(item.model)) : [];
   const sufficientMarkers = visibleSufficiency.flatMap(item => item.minimal_sufficient_k == null
     ? [] : [{ model: item.model, k: item.minimal_sufficient_k }]);
   return <>
     <h1 className="page-heading">Бюджет признаков</h1>
     <p className="page-question">Как меняется Macro-F1 при сокращении числа исходных измеряемых признаков? Каждая точка — завершённое условие полного nested CV; отсутствующие k не интерполируются.</p>
     {error && <Alert severity="warning" sx={{ mb: 2 }}>{error} <Link href="/feature-budget">Повторить запрос</Link></Alert>}
-    {pca && <Alert severity="info" sx={{ mb: 2 }}>PCA — отдельное представление: число компонент не равно числу физических измерений. Рассчитанных PCA runs для этой фигуры пока нет.</Alert>}
+    {pca && <Alert severity="info" sx={{ mb: 2 }}>PCA — отдельное представление: число компонент не равно числу физических измерений. Даже 1 component требует все 16 исходных измерений.</Alert>}
     {cohortEntries.length > 1 && <Alert severity="info" sx={{ mb: 2 }}>
       Разные версии данных или outer-разбиения не объединяются в одну кривую. Наборы: {cohortEntries.map(([key, values], index) => {
         const params = new URLSearchParams({ ...query, cohort: key });
@@ -88,17 +90,17 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
       })}
     </Alert>}
     {partial && <Alert severity="info" sx={{ mb: 2 }}>Частичные результаты · {measured}. Линии между точками не строятся.</Alert>}
-    {!error && !pca && points.length === 0 && <Alert severity="info" sx={{ mb: 2 }}>Для выбранного фильтра нет завершённых full-protocol условий. Smoke runs не входят в научную кривую.</Alert>}
+    {!error && points.length === 0 && <Alert severity="info" sx={{ mb: 2 }}>Для выбранного фильтра нет завершённых full-protocol условий. Smoke runs и queued/running conditions не входят в научную фигуру.</Alert>}
     <section className="figure-surface" aria-labelledby="figure-title">
-      <div className="figure-heading"><h2 id="figure-title">Macro-F1 · исходные признаки</h2>
-        <Chip label={pca || !points.length ? "Не рассчитано" : partial ? "Частичные результаты" : "Рассчитано"} size="small" variant="outlined" />
+      <div className="figure-heading"><h2 id="figure-title">Macro-F1 · {pca ? "PCA components" : "исходные признаки"} · {selectorLabel[selectedSelector as FeatureBudgetPoint["selector"]]}</h2>
+        <Chip label={!points.length ? "Не рассчитано" : partial ? "Частичные результаты" : "Рассчитано"} size="small" variant="outlined" />
       </div>
-      {pca ? <EmptyPlot pca /> : <ScientificPlot points={points} baselines={baselines.map(item => ({ runId: item.run.display_id, model: item.model, macroF1: item.macroF1 }))} sufficient={sufficientMarkers} />}
-      <p className="table-note">{pca ? "PCA требует все 16 исходных измерений." : `Только сохранённые значения; ромб — сопоставимый baseline, зелёное кольцо — минимальное sufficient k. Набор: ${selectedCohort ? `${selectedCohort.slice(0, 12)}… · outer ${selectedCohort.slice(65, 77)}…` : "не рассчитано"}.`}</p>
+      {!points.length ? <EmptyPlot pca={pca} /> : <ScientificPlot points={points} baselines={baselines.map(item => ({ runId: item.run.display_id, model: item.model, macroF1: item.macroF1 }))} sufficient={sufficientMarkers} />}
+      <p className="table-note">{pca ? `Только реально завершённые PCA conditions; components не являются физическими признаками. Набор: ${selectedCohort ? `${selectedCohort.slice(0, 12)}…` : "не рассчитано"}.` : `Только сохранённые значения; ромб — сопоставимый baseline, зелёное кольцо — минимальное sufficient k только для Core MI. Контрольные comparator points не интерполируются. Набор: ${selectedCohort ? `${selectedCohort.slice(0, 12)}… · outer ${selectedCohort.slice(65, 77)}…` : "не рассчитано"}.`}</p>
     </section>
     <section className="table-surface" aria-labelledby="table-title">
       <div className="table-heading"><h2 id="table-title">Завершённые условия</h2><span className="table-note">{rows.length} записей · Accuracy из того же run</span></div>
-      <BudgetResultsGrid rows={pca ? [] : rows} />
+      <BudgetResultsGrid rows={rows} budgetHeader={pca ? "PCA components" : "Исходных признаков"} />
     </section>
     {visibleSufficiency.length > 0 && <section className="table-surface" aria-labelledby="sufficiency-title">
       <div className="table-heading"><h2 id="sufficiency-title">Paired sufficient-k analysis</h2><span className="table-note">Corrected one-sided upper bound · margin 0,01</span></div>

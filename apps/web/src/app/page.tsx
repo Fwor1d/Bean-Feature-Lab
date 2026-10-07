@@ -10,20 +10,22 @@ export default async function HomePage() {
   let runs: Awaited<ReturnType<typeof api.runs>> = [];
   let experiments: Awaited<ReturnType<typeof api.experiments>> = [];
   let points: Awaited<ReturnType<typeof api.featureBudgetSeries>> = [];
+  let sufficiency: Awaited<ReturnType<typeof api.coreSufficiency>> = [];
   try {
-    [datasets, runs, experiments, points] = await Promise.all([api.datasets(), api.runs(), api.experiments(), api.featureBudgetSeries()]);
+    [datasets, runs, experiments, points, sufficiency] = await Promise.all([api.datasets(), api.runs(), api.experiments(), api.featureBudgetSeries(), api.coreSufficiency()]);
   } catch (caught) { error = apiErrorMessage(caught); }
   const completed = runs.filter(run => run.status === "COMPLETED");
-  const fullProtocol = points.length;
+  const miPoints = points.filter(point => point.selector === "mutual_information" && point.budget_kind === "original_features");
+  const fullProtocol = miPoints.length;
   const observedConditions = new Map<string, Set<number>>();
-  for (const point of points) {
+  for (const point of miPoints) {
     const key = `${point.model}:${point.dataset_hash}:${point.outer_split_set_sha256}`;
     const budgets = observedConditions.get(key) ?? new Set<number>();
-    budgets.add(point.k_original_features);
+    budgets.add(point.budget_value);
     observedConditions.set(key, budgets);
   }
   const partial = [...observedConditions.values()].some(budgets => budgets.size < 16);
-  const latest = points.find(point => runs.some(run => run.display_id === point.run_id));
+  const latest = [...miPoints].reverse().find(point => runs.some(run => run.display_id === point.run_id));
   const latestRun = runs.find(run => run.display_id === latest?.run_id);
   const baseline = runs.find(run => {
     const config = experiments.find(item => item.id === run.experiment_id)?.configuration;
@@ -40,10 +42,10 @@ export default async function HomePage() {
       <div className="status-line"><IconPlayerPlay size={19} /><strong>Запуски</strong><span>{runs.length} в журнале · {completed.length} завершено · {runs.length - completed.length} в других состояниях</span><Button component={Link} href="/runs" size="small" endIcon={<IconArrowRight size={15} />}>Открыть журнал</Button></div>
       <hr className="section-rule" />
       <p className="table-note">{fullProtocol > 0 ? `Рассчитано условий Mutual Information: ${fullProtocol}. Полная кривая содержит 16 значений k для каждой модели; ${partial ? "текущий набор результатов частичный" : "наблюдаемые серии содержат все 16 значений k"}.` : "Рассчитанных full-protocol MI условий пока нет. График остаётся пустым."}</p>
-      {latest && latestRun && <p><Link href={`/runs/${latestRun.id}`}>{latest.run_id}</Link> · {modelLabel[latest.model]} · MI · k={latest.k_original_features} · Macro-F1 {metric(latest.macro_f1_mean)} · Accuracy {metric(latestRun.metrics?.accuracy_mean)}</p>}
+      {latest && latestRun && <p><Link href={`/runs/${latestRun.id}`}>{latest.run_id}</Link> · {modelLabel[latest.model]} · MI · k={latest.budget_value} · Macro-F1 {metric(latest.macro_f1_mean)} · Accuracy {metric(latestRun.metrics?.accuracy_mean)}</p>}
       {baseline && <p><Link href={`/runs/${baseline.id}`}>{baseline.display_id}</Link> · baseline на 16 исходных признаках · Macro-F1 {metric(baseline.metrics?.macro_f1_mean)}.</p>}
       <div className="action-row"><Button component={Link} href="/feature-budget" variant="contained" endIcon={<IconArrowRight size={17} />}>Исследовать Feature Budget</Button><Button component={Link} href="/features" variant="outlined">Проверить датасет и признаки</Button></div>
     </section>
-    <p className="scientific-footnote">Достаточное k: не рассчитано. Порог потери 0,01 задан заранее, но статистический интервал для зависимых repeated-CV folds ещё не утверждён. Никаких значений для отсутствующих условий интерфейс не достраивает.</p>
+    <p className="scientific-footnote">Минимальное sufficient k по заранее зафиксированному corrected repeated-CV методу: {sufficiency.length ? sufficiency.map(item => `${modelLabel[item.model]} — ${item.minimal_sufficient_k ?? "не установлено"}`).join(" · ") : "не рассчитано"}. Margin 0,01 и Bonferroni 0,05/15 заданы до расчёта; отсутствующие условия не достраиваются.</p>
   </>;
 }
