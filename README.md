@@ -68,6 +68,7 @@ Verify, reproduce without overwriting, and export a completed run:
 .venv/bin/beanfeature runs reproduce RUN-000003
 .venv/bin/beanfeature runs export RUN-000003 --kind folds.csv
 .venv/bin/beanfeature runs export RUN-000003 --kind selected-features.csv
+.venv/bin/beanfeature runs export RUN-000003 --kind summary.md
 ```
 
 `reproduce` first verifies the immutable artifact, dataset hash, protocol and fold completeness, then creates a new queued run. It never modifies the source run.
@@ -91,11 +92,11 @@ Scaling, selection/PCA, hyperparameter search and fitting occur inside the relev
 ## Product routes
 
 - `/` — project question, validated dataset and real run availability.
-- `/feature-budget` — real multi-model MI curves, baselines and corrected sufficient-k decisions.
+- `/feature-budget` — real multi-model MI curves, comparator control points, separate PCA representation, baselines and corrected sufficient-k decisions.
 - `/experiments` — compatibility-checked configurations, compute estimate and explicit enqueue confirmation.
 - `/runs` and `/runs/{id}` — execution registry and reproducibility report with fold diagnostics and exports.
 - `/features` — canonical features, data quality, selection frequency/stability and correlation context.
-- `/compare` — paired compact-vs-baseline comparison on identical outer folds.
+- `/compare` — formal compact-vs-baseline sufficiency and a separate descriptive A-vs-B view on identical outer folds.
 - `/classifier` — active deployment model, UCI examples, probabilities and session-only history.
 
 Runtime datasets, SQLite state, models and scientific artifacts are intentionally ignored by Git. Versioned protocol/configuration files and migrations are committed; reported numbers must remain traceable to verified runtime artifacts.
