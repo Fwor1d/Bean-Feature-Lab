@@ -25,7 +25,7 @@ export default async function HomePage() {
     observedConditions.set(key, budgets);
   }
   const partial = [...observedConditions.values()].some(budgets => budgets.size < 16);
-  const latest = [...miPoints].reverse().find(point => runs.some(run => run.display_id === point.run_id));
+  const latest = miPoints.find(point => runs.some(run => run.display_id === point.run_id));
   const latestRun = runs.find(run => run.display_id === latest?.run_id);
   const baseline = runs.find(run => {
     const config = experiments.find(item => item.id === run.experiment_id)?.configuration;

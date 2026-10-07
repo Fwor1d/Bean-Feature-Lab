@@ -4,10 +4,11 @@ import { BudgetResultsGrid, type BudgetRow } from "@/components/BudgetResultsGri
 import { EmptyPlot } from "@/components/EmptyPlot";
 import { ScientificPlot } from "@/components/ScientificPlot";
 import { api, apiErrorMessage } from "@/lib/api/client";
-import type { CoreSufficiency, Experiment, FeatureBudgetPoint, Run } from "@/lib/api/contracts";
+import type { CoreSufficiency, Experiment, FeatureBudgetPoint, Run, SelectorId } from "@/lib/api/contracts";
 import { budgetCohorts, metric, modelLabel, selectorLabel } from "@/lib/science";
 
 type Query = { budget?: string; model?: string; selector?: string; cohort?: string };
+const originalSelectors: SelectorId[] = ["mutual_information", "anova", "rfe", "l1_logistic", "tree_importance"];
 
 export default async function FeatureBudgetPage({ searchParams }: { searchParams: Promise<Query> }) {
   const query = await searchParams;
@@ -26,7 +27,8 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
   const experimentById = new Map(experiments.map(item => [item.id, item]));
   const runByDisplayId = new Map(runs.map(item => [item.display_id, item]));
   const selectedModel = query.model ?? "all";
-  const selectedSelector = pca ? "pca" : query.selector ?? "mutual_information";
+  const requestedSelector = query.selector as SelectorId | undefined;
+  const selectedSelector: SelectorId = pca ? "pca" : requestedSelector && originalSelectors.includes(requestedSelector) ? requestedSelector : "mutual_information";
   const selectedBudgetKind = pca ? "pca_components" : "original_features";
   const eligiblePoints = series.filter(point => point.budget_kind === selectedBudgetKind &&
     point.selector === selectedSelector && (selectedModel === "all" || point.model === selectedModel));
@@ -92,7 +94,7 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
     {partial && <Alert severity="info" sx={{ mb: 2 }}>Частичные результаты · {measured}. Линии между точками не строятся.</Alert>}
     {!error && points.length === 0 && <Alert severity="info" sx={{ mb: 2 }}>Для выбранного фильтра нет завершённых full-protocol условий. Smoke runs и queued/running conditions не входят в научную фигуру.</Alert>}
     <section className="figure-surface" aria-labelledby="figure-title">
-      <div className="figure-heading"><h2 id="figure-title">Macro-F1 · {pca ? "PCA components" : "исходные признаки"} · {selectorLabel[selectedSelector as FeatureBudgetPoint["selector"]]}</h2>
+      <div className="figure-heading"><h2 id="figure-title">Macro-F1 · {pca ? "PCA components" : "исходные признаки"} · {selectorLabel[selectedSelector]}</h2>
         <Chip label={!points.length ? "Не рассчитано" : partial ? "Частичные результаты" : "Рассчитано"} size="small" variant="outlined" />
       </div>
       {!points.length ? <EmptyPlot pca={pca} /> : <ScientificPlot points={points} baselines={baselines.map(item => ({ runId: item.run.display_id, model: item.model, macroF1: item.macroF1 }))} sufficient={sufficientMarkers} />}
