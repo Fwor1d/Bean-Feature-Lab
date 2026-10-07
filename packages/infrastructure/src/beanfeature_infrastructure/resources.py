@@ -80,7 +80,7 @@ class ProcessTreeMeasurement:
                 "total_memory_bytes": psutil.virtual_memory().total,
             },
             "note": (
-                "Sampled RSS includes the sequential worker process and observed children. "
+                "Sampled RSS includes the fresh run process and observed children. "
                 "Incremental RSS is relative to the fresh child-process baseline and remains an "
                 "engineering measurement, not a scientific outcome."
             ),
