@@ -16,7 +16,7 @@ export default async function RunsPage() {
         id: run.id, displayId: run.display_id,
         model: config ? modelLabel[config.model] : `Конфигурация #${run.experiment_id}`,
         selector: config ? selectorLabel[config.selector] : "—",
-        budget: config?.budget_kind === "pca_components" ? `${config.n_components} компонент PCA` : config ? `${config.k_original_features} исходных` : "—",
+        budget: config?.budget_kind === "pca_components" ? `${config.n_components} компонент PCA` : config?.budget_kind === "sparse_original_features" ? `L1 C=${String(config.selector_configuration?.C)} · variable` : config ? `${config.k_original_features} исходных` : "—",
         status: run.status, macroF1: run.metrics?.macro_f1_mean ?? null,
         accuracy: run.metrics?.accuracy_mean ?? null,
         folds: summaries[index]?.summary?.outer_fold_count ?? null,

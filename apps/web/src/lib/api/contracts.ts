@@ -6,7 +6,7 @@ export type SelectorId = "none" | "mutual_information" | "anova" | "rfe" | "l1_l
 export interface ExperimentConfig {
   model: ModelId;
   selector: SelectorId;
-  budget_kind: "original_features" | "pca_components";
+  budget_kind: "original_features" | "pca_components" | "sparse_original_features";
   k_original_features: number | null;
   n_components: number | null;
   required_raw_feature_count: number | null;

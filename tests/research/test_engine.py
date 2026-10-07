@@ -254,6 +254,39 @@ def test_rfe_and_tree_ranking_estimators_follow_frozen_model_branch() -> None:
         build_pipeline(wrong)
 
 
+def test_l1_sparse_path_records_observed_nonzero_features(synthetic_classification) -> None:
+    features, target = synthetic_classification
+    condition = EngineCondition(
+        ModelId.LOGISTIC_REGRESSION,
+        SelectorId.L1_LOGISTIC,
+        "sparse_original_features",
+        None,
+        None,
+        42,
+        preset_search_space(ModelId.LOGISTIC_REGRESSION, smoke=True),
+        "smoke",
+        {"estimator": "l1_logistic", "C": 0.1},
+    )
+    pipeline = build_pipeline(condition)
+    pipeline.fit(features.iloc[:112], target[:112])
+    selector = pipeline.named_steps["select"]
+    transformed = pipeline[:-1].transform(features.iloc[112:])
+    assert 1 <= selector.observed_nonzero_count_ <= 16
+    assert transformed.shape == (28, selector.observed_nonzero_count_)
+
+    with pytest.raises(ValueError, match="fixed-k"):
+        EngineCondition(
+            ModelId.LOGISTIC_REGRESSION,
+            SelectorId.L1_LOGISTIC,
+            "original_features",
+            4,
+            None,
+            42,
+            preset_search_space(ModelId.LOGISTIC_REGRESSION, smoke=True),
+            "smoke",
+        )
+
+
 @pytest.mark.parametrize("model", list(ModelId))
 def test_core_model_can_fit_inside_pipeline(model: ModelId, synthetic_classification) -> None:
     features, target = synthetic_classification

@@ -157,7 +157,7 @@ class ClassifierBenchmarkResponse(BaseModel):
 class ExperimentConfigDTO(BaseModel):
     model: ModelId
     selector: SelectorId
-    budget_kind: Literal["original_features", "pca_components"]
+    budget_kind: Literal["original_features", "pca_components", "sparse_original_features"]
     k_original_features: int | None = Field(default=None, ge=1, le=16)
     n_components: int | None = Field(default=None, ge=1, le=16)
     required_raw_feature_count: int | None = None

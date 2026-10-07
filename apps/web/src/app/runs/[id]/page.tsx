@@ -60,7 +60,7 @@ export default async function RunDetailPage({ params, searchParams }: {
         <h2 id="provenance-title" className="section-title">Конфигурация и происхождение</h2>
         {verification && <div className="status-line" style={{ marginBottom: 16 }}><Chip label={verification.verified ? "Artifact и run верифицированы" : "Верификация не пройдена"} color={verification.verified ? "success" : "error"} size="small" variant="outlined" /><span>{Object.values(verification.checks).filter(Boolean).length}/{Object.keys(verification.checks).length} проверок</span></div>}
         <dl className="detail-list">
-          <div><dt>Бюджет</dt><dd>{config?.budget_kind === "pca_components" ? `${config.n_components} компонент PCA · нужны 16 исходных признаков` : `${config?.k_original_features} исходных признаков`}</dd></div>
+          <div><dt>Бюджет</dt><dd>{config?.budget_kind === "pca_components" ? `${config.n_components} компонент PCA · нужны 16 исходных признаков` : config?.budget_kind === "sparse_original_features" ? `L1 sparse path C=${String(config.selector_configuration?.C)} · фактическое k по folds` : `${config?.k_original_features} исходных признаков`}</dd></div>
           <div><dt>Dataset</dt><dd>{detail.dataset_manifest.source} · ID {detail.dataset_manifest.source_id} · {detail.dataset_manifest.dataset_version}</dd></div>
           <div><dt>ARFF SHA-256</dt><dd>{shortHash(detail.dataset_manifest.arff_sha256)}</dd></div>
           <div><dt>Outer split set</dt><dd>{shortHash(scientific?.outer_split_set_sha256 ?? "—")}</dd></div>

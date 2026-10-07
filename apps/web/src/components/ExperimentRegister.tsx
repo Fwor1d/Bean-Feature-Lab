@@ -13,11 +13,12 @@ const selectorOptions: { id: SelectorId; label: string }[] = [
   { id: "mutual_information", label: "Mutual Information" },
   { id: "anova", label: "ANOVA" },
   { id: "rfe", label: "RFE" },
+  { id: "l1_logistic", label: "L1 Logistic · variable sparsity" },
   { id: "tree_importance", label: "Tree importance" },
   { id: "pca", label: "PCA" },
 ];
 const compatibility: Record<ModelId, SelectorId[]> = {
-  logistic_regression: ["none", "mutual_information", "rfe", "pca"],
+  logistic_regression: ["none", "mutual_information", "rfe", "l1_logistic", "pca"],
   svm_rbf: ["none", "mutual_information", "anova", "rfe", "pca"],
   random_forest: ["none", "mutual_information", "anova", "tree_importance"],
   xgboost: ["none", "mutual_information", "anova", "tree_importance"],
@@ -42,6 +43,7 @@ export function ExperimentRegister({ initialExperiments, initialRuns, datasetVer
   const [model, setModel] = useState<ModelId>("logistic_regression");
   const [selector, setSelector] = useState<SelectorId>("mutual_information");
   const [budget, setBudget] = useState(16);
+  const [l1C, setL1C] = useState(0.1);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState<string | null>(null);
@@ -62,10 +64,12 @@ export function ExperimentRegister({ initialExperiments, initialRuns, datasetVer
     setBusy(true); setError(null);
     try {
       const pca = selector === "pca";
+      const sparse = selector === "l1_logistic";
       const item = await api.createExperiment({ name, configuration: {
-        model, selector, budget_kind: pca ? "pca_components" : "original_features",
-        k_original_features: pca ? null : selector === "none" ? 16 : budget, n_components: pca ? budget : null,
+        model, selector, budget_kind: pca ? "pca_components" : sparse ? "sparse_original_features" : "original_features",
+        k_original_features: pca || sparse ? null : selector === "none" ? 16 : budget, n_components: pca ? budget : null,
         required_raw_feature_count: pca ? 16 : null, dataset_version: datasetVersion, seed: 42,
+        selector_configuration: sparse ? { estimator: "l1_logistic", C: l1C } : {},
       } });
       setExperiments(current => [item, ...current]); setName("");
     } catch (caught) { setError(apiErrorMessage(caught)); }
@@ -96,9 +100,9 @@ export function ExperimentRegister({ initialExperiments, initialRuns, datasetVer
         }}>
           {selectorOptions.filter(item => allowedSelectors.includes(item.id)).map(item => <MenuItem value={item.id} key={item.id}>{item.label}</MenuItem>)}
         </Select></FormControl>
-        {fixedControlPoint ? <FormControl size="small" sx={{ width: 180 }}><InputLabel id="experiment-budget">Контрольное k</InputLabel><Select labelId="experiment-budget" label="Контрольное k" value={budget} onChange={event => setBudget(Number(event.target.value))}>{CONTROL_POINTS.map(point => <MenuItem key={point} value={point}>{point} исходных</MenuItem>)}</Select></FormControl> :
+        {selector === "l1_logistic" ? <FormControl size="small" sx={{ width: 180 }}><InputLabel id="experiment-l1-c">L1 selector C</InputLabel><Select labelId="experiment-l1-c" label="L1 selector C" value={l1C} onChange={event => setL1C(Number(event.target.value))}>{[0.01, 0.1, 1, 10].map(value => <MenuItem key={value} value={value}>{value}</MenuItem>)}</Select></FormControl> : fixedControlPoint ? <FormControl size="small" sx={{ width: 180 }}><InputLabel id="experiment-budget">Контрольное k</InputLabel><Select labelId="experiment-budget" label="Контрольное k" value={budget} onChange={event => setBudget(Number(event.target.value))}>{CONTROL_POINTS.map(point => <MenuItem key={point} value={point}>{point} исходных</MenuItem>)}</Select></FormControl> :
           <TextField label={selector === "pca" ? "Компонент PCA" : "Исходных признаков"} type="number" value={selector === "none" ? 16 : budget} disabled={selector === "none"} onChange={event => setBudget(Number(event.target.value))} slotProps={{ htmlInput: { min: 1, max: 16 } }} sx={{ width: 160 }} />}
-        <Button variant="contained" onClick={create} disabled={demoReadOnly || busy || !name.trim() || !datasetVersion || (selector !== "none" && (!Number.isInteger(budget) || budget < 1 || budget > 16))} sx={{ minHeight: 40 }}>Сохранить</Button>
+        <Button variant="contained" onClick={create} disabled={demoReadOnly || busy || !name.trim() || !datasetVersion || (selector !== "none" && selector !== "l1_logistic" && (!Number.isInteger(budget) || budget < 1 || budget > 16))} sx={{ minHeight: 40 }}>Сохранить</Button>
       </Box>
       <Typography color="text.secondary" sx={{ mt: 1.5, fontSize: 12 }}>1 условие · 15 outer folds · 4 inner folds · историческая медиана для {modelLabel[model]}: {durationLabel(historicalSeconds)}. Оценка ориентировочная и не является benchmark.</Typography>
       {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
@@ -108,7 +112,7 @@ export function ExperimentRegister({ initialExperiments, initialRuns, datasetVer
       <h2 id="registry-title" style={{ marginTop: 0, fontSize: 17 }}>Реестр конфигураций</h2>
       {experiments.length === 0 ? <Typography color="text.secondary" sx={{ fontSize: 14 }}>Конфигураций нет. Сохраните первую после проверки датасета.</Typography> :
         <Box component="ul" sx={{ listStyle: "none", m: 0, p: 0 }}>
-          {experiments.map(item => <Box component="li" key={item.id} sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 2, py: 1.5, borderTop: "1px solid #dce3ea" }}><div><strong>{item.name}</strong><Typography color="text.secondary" sx={{ fontSize: 13 }}>{modelLabel[item.configuration.model]} · {selectorLabel[item.configuration.selector]} · {item.configuration.budget_kind === "pca_components" ? `${item.configuration.n_components} компонент PCA` : `${item.configuration.k_original_features} исходных признаков`} · {item.configuration.evaluation_mode === "smoke" ? "Smoke" : "Полный протокол"}</Typography></div><Button variant="outlined" size="small" disabled={demoReadOnly || busy || !datasetVersion} onClick={() => setReview(item)}>Проверить и запустить</Button></Box>)}
+          {experiments.map(item => <Box component="li" key={item.id} sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 2, py: 1.5, borderTop: "1px solid #dce3ea" }}><div><strong>{item.name}</strong><Typography color="text.secondary" sx={{ fontSize: 13 }}>{modelLabel[item.configuration.model]} · {selectorLabel[item.configuration.selector]} · {item.configuration.budget_kind === "pca_components" ? `${item.configuration.n_components} компонент PCA` : item.configuration.budget_kind === "sparse_original_features" ? `L1 C=${String(item.configuration.selector_configuration?.C)} · фактическое k по folds` : `${item.configuration.k_original_features} исходных признаков`} · {item.configuration.evaluation_mode === "smoke" ? "Smoke" : "Полный протокол"}</Typography></div><Button variant="outlined" size="small" disabled={demoReadOnly || busy || !datasetVersion} onClick={() => setReview(item)}>Проверить и запустить</Button></Box>)}
         </Box>}
     </section>
     <Dialog open={review !== null} onClose={() => !busy && setReview(null)} fullWidth maxWidth="sm" aria-labelledby="run-review-title">
@@ -119,7 +123,7 @@ export function ExperimentRegister({ initialExperiments, initialRuns, datasetVer
           <dl className="detail-list">
             <div><dt>Dataset</dt><dd>{review.configuration.dataset_version ?? "Не зарегистрирован"}</dd></div>
             <div><dt>Модель / метод</dt><dd>{modelLabel[review.configuration.model]} · {selectorLabel[review.configuration.selector]}</dd></div>
-            <div><dt>Представление</dt><dd>{review.configuration.budget_kind === "pca_components" ? `${review.configuration.n_components} компонент PCA при 16 исходных измерениях` : `${review.configuration.k_original_features} исходных признаков`}</dd></div>
+            <div><dt>Представление</dt><dd>{review.configuration.budget_kind === "pca_components" ? `${review.configuration.n_components} компонент PCA при 16 исходных измерениях` : review.configuration.budget_kind === "sparse_original_features" ? `L1 sparse path C=${String(review.configuration.selector_configuration?.C)}; число ненулевых признаков измеряется в каждом fold` : `${review.configuration.k_original_features} исходных признаков`}</dd></div>
             <div><dt>Протокол</dt><dd>{review.configuration.evaluation_mode === "smoke" ? "Технический smoke" : "Outer: 5 folds × 3 repeats; inner: 4 folds"} · seed {review.configuration.seed}</dd></div>
             <div><dt>Поиск</dt><dd>{JSON.stringify(review.configuration.search_space ?? {})}</dd></div>
             <div><dt>Ожидаемый объём</dt><dd>1 условие · 15 outer folds · inner CV 4 folds · {durationLabel(historicalSecondsFor(review.configuration.model))}</dd></div>

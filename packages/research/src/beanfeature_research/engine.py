@@ -59,22 +59,23 @@ def preset_search_space(model: ModelId, *, smoke: bool = False) -> dict[str, lis
     return {key: values[:1] if smoke else values[:] for key, values in space.items()}
 
 
-class L1TopK(BaseEstimator, TransformerMixin):
-    """Fold-local embedded ranking, retaining exactly k measured columns."""
+class L1SparseSelector(BaseEstimator, TransformerMixin):
+    """Fold-local sparse selection; the observed feature count is never forced to k."""
 
-    def __init__(self, k: int, seed: int = 42, C: float = 0.3) -> None:
-        self.k = k
+    def __init__(self, seed: int = 42, C: float = 0.1, tolerance: float = 1e-12) -> None:
         self.seed = seed
         self.C = C
+        self.tolerance = tolerance
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "L1TopK":
+    def fit(self, X: np.ndarray, y: np.ndarray) -> "L1SparseSelector":
         self.estimator_ = LogisticRegression(
             l1_ratio=1.0, solver="saga", C=self.C, max_iter=1200, random_state=self.seed
         ).fit(X, y)
         importance = np.max(np.abs(self.estimator_.coef_), axis=0)
-        self.observed_nonzero_count_ = int(np.count_nonzero(importance))
-        self.support_ = np.zeros(X.shape[1], dtype=bool)
-        self.support_[np.argsort(-importance, kind="stable")[: self.k]] = True
+        self.support_ = importance > self.tolerance
+        self.observed_nonzero_count_ = int(np.count_nonzero(self.support_))
+        if self.observed_nonzero_count_ == 0:
+            raise ValueError("L1 sparse selector retained no features for this training fold")
         return self
 
     def transform(self, X: np.ndarray) -> np.ndarray:
@@ -90,7 +91,7 @@ class L1TopK(BaseEstimator, TransformerMixin):
 class EngineCondition:
     model: ModelId
     selector: SelectorId
-    budget_kind: Literal["original_features", "pca_components"]
+    budget_kind: Literal["original_features", "pca_components", "sparse_original_features"]
     k_original_features: int | None
     n_components: int | None
     seed: int
@@ -101,18 +102,38 @@ class EngineCondition:
     def __post_init__(self) -> None:
         if self.evaluation_mode not in ("protocol", "smoke"):
             raise ValueError("Unknown evaluation mode")
-        if self.budget_kind not in ("original_features", "pca_components"):
+        if self.budget_kind not in (
+            "original_features",
+            "pca_components",
+            "sparse_original_features",
+        ):
             raise ValueError("Unknown feature-budget representation")
         if self.budget_kind == "pca_components":
             if self.selector is not SelectorId.PCA or self.k_original_features is not None:
                 raise ValueError("PCA cannot be an original-feature budget")
             PCARepresentation(self.n_components or 0)
-        else:
+        elif self.budget_kind == "original_features":
             if self.selector is SelectorId.PCA or self.n_components is not None:
                 raise ValueError("Original-feature budget cannot use PCA")
+            if self.selector is SelectorId.L1_LOGISTIC:
+                raise ValueError("L1 variable sparsity cannot be represented as a fixed-k budget")
             OriginalFeatureBudget(self.k_original_features or 0)
             if self.selector is SelectorId.NONE and self.k_original_features != 16:
                 raise ValueError("No-selector baseline requires all 16 original features")
+        else:
+            if (
+                self.selector is not SelectorId.L1_LOGISTIC
+                or self.k_original_features is not None
+                or self.n_components is not None
+            ):
+                raise ValueError(
+                    "Sparse original-feature representation requires L1 without fixed k"
+                )
+            selector_c = (self.selector_configuration or {}).get("C")
+            if isinstance(selector_c, bool) or not isinstance(selector_c, (float, int)):
+                raise ValueError("L1 sparse path requires numeric selector C")
+            if float(selector_c) not in (0.01, 0.1, 1.0, 10.0):
+                raise ValueError("L1 selector C is outside the frozen sparse path")
         if not self.search_space or any(not values for values in self.search_space.values()):
             raise ValueError("A frozen, nonempty hyperparameter search space is required")
 
@@ -246,7 +267,10 @@ def build_pipeline(condition: EngineCondition) -> Pipeline:
         _require_selector_estimator(condition, estimator_id)
         selector = RFE(ranking_estimator, n_features_to_select=k, step=1)
     elif condition.selector is SelectorId.L1_LOGISTIC:
-        selector = L1TopK(k=k or 0, seed=seed)
+        selector = L1SparseSelector(
+            seed=seed,
+            C=float((condition.selector_configuration or {})["C"]),
+        )
     elif condition.selector is SelectorId.TREE_IMPORTANCE:
         ranking_estimator, estimator_id = _tree_ranking_estimator(condition.model, seed)
         _require_selector_estimator(condition, estimator_id)
@@ -375,14 +399,14 @@ def run_nested_cv(
         selected: list[str] | None = None
         representation: dict[str, object] = {"budget_kind": condition.budget_kind}
         selector = fitted.named_steps["select"]
-        if condition.budget_kind == "original_features":
+        if condition.budget_kind in ("original_features", "sparse_original_features"):
             selected = (
                 list(X.columns)
                 if selector == "passthrough"
                 else list(X.columns[selector.get_support()])
             )
             representation["k_original_features"] = len(selected)
-            if isinstance(selector, L1TopK):
+            if isinstance(selector, L1SparseSelector):
                 representation["observed_nonzero_count"] = selector.observed_nonzero_count_
         else:
             representation.update(
@@ -432,7 +456,14 @@ def run_nested_cv(
     scores = [float(fold["macro_f1"]) for fold in folds]
     accuracies = [float(fold["accuracy"]) for fold in folds]
     stability: dict[str, object] | None = None
-    if condition.budget_kind == "original_features" and condition.selector is not SelectorId.NONE:
+    if (
+        condition.budget_kind
+        in (
+            "original_features",
+            "sparse_original_features",
+        )
+        and condition.selector is not SelectorId.NONE
+    ):
         sets = [set(fold["selected_original_features"]) for fold in folds]
         frequency = {name: sum(name in chosen for chosen in sets) / len(sets) for name in X.columns}
         jaccard = [len(a & b) / len(a | b) for i, a in enumerate(sets) for b in sets[i + 1 :]]
@@ -462,6 +493,13 @@ def run_nested_cv(
         "required_raw_feature_count": 16
         if condition.budget_kind == "pca_components"
         else condition.k_original_features,
+        "observed_nonzero_feature_counts": [
+            fold["representation"]["observed_nonzero_count"]
+            for fold in folds
+            if "observed_nonzero_count" in fold["representation"]
+        ]
+        if condition.budget_kind == "sparse_original_features"
+        else None,
         "outer_fold_count": len(folds),
         "inner_fold_count": inner_folds,
         "macro_f1_mean": mean(scores),

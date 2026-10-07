@@ -207,7 +207,11 @@ class ApplicationService:
         clean_name = name.strip()
         if not clean_name or len(clean_name) > 120:
             raise ValueError("Experiment name must contain 1–120 characters")
-        if configuration.budget_kind not in ("original_features", "pca_components"):
+        if configuration.budget_kind not in (
+            "original_features",
+            "pca_components",
+            "sparse_original_features",
+        ):
             raise ValueError("Unknown feature-budget representation")
         if configuration.budget_kind == "original_features":
             if (
@@ -224,7 +228,7 @@ class ApplicationService:
                 and configuration.k_original_features != 16
             ):
                 raise ValueError("No-selector baseline requires 16 original features")
-        else:
+        elif configuration.budget_kind == "pca_components":
             if (
                 configuration.selector is not SelectorId.PCA
                 or configuration.k_original_features is not None
@@ -238,6 +242,16 @@ class ApplicationService:
                 if configuration.required_raw_feature_count is not None
                 else 16,
             )
+        else:
+            if (
+                configuration.selector is not SelectorId.L1_LOGISTIC
+                or configuration.k_original_features is not None
+                or configuration.n_components is not None
+                or configuration.required_raw_feature_count is not None
+            ):
+                raise ValueError(
+                    "Sparse original-feature representation requires L1 without fixed k"
+                )
         if configuration.evaluation_mode not in ("protocol", "smoke"):
             raise ValueError("Unknown evaluation mode")
         if not 0 <= configuration.seed <= 4_294_967_295:
@@ -292,9 +306,18 @@ class ApplicationService:
             if configuration.model not in (ModelId.LOGISTIC_REGRESSION, ModelId.SVM_RBF):
                 raise ValueError("Core PCA supports Logistic Regression and SVM RBF")
         elif configuration.selector is SelectorId.L1_LOGISTIC:
-            raise ValueError(
-                "Core L1 is a variable-sparsity path and is not accepted as a fixed-k condition"
-            )
+            if configuration.model is not ModelId.LOGISTIC_REGRESSION:
+                raise ValueError("Core L1 sparse path supports Logistic Regression only")
+            if configuration.budget_kind != "sparse_original_features":
+                raise ValueError("Core L1 is variable sparsity, not a fixed-k condition")
+            selector_c = selector_configuration.get("C")
+            if isinstance(selector_c, bool) or not isinstance(selector_c, (float, int)):
+                raise ValueError("L1 sparse path requires numeric selector C")
+            if float(selector_c) not in (0.01, 0.1, 1.0, 10.0):
+                raise ValueError("L1 selector C is outside the frozen sparse path")
+            if selector_configuration.get("estimator") not in (None, "l1_logistic"):
+                raise ValueError("L1 selector estimator differs from frozen Core protocol")
+            selector_configuration = {"estimator": "l1_logistic", "C": float(selector_c)}
         elif selector_configuration:
             raise ValueError("This selector does not accept selector_configuration")
         frozen_space = preset_search_space(
@@ -394,6 +417,164 @@ class ApplicationService:
                 summary["active"] = int(summary["active"]) + 1
                 continue
             summary["missing"] = int(summary["missing"]) + 1
+            if not create:
+                continue
+            experiment = matching[0] if matching else self.create_experiment(name, config)
+            created = self.create_run(experiment.id)
+            created_ids = summary["created_run_ids"]
+            assert isinstance(created_ids, list)
+            created_ids.append(created.display_id)
+            if matching_runs:
+                summary["retried"] = int(summary["retried"]) + 1
+        return summary
+
+    def enqueue_core_comparators(
+        self, *, create: bool, branches: set[str] | None = None
+    ) -> dict[str, object]:
+        """Plan or enqueue the predeclared non-MI Core comparator conditions."""
+        datasets = self.list_datasets()
+        if len(datasets) != 1:
+            raise ValueError("Exactly one validated dataset version is required")
+        allowed_branches = {"anova", "rfe", "tree_importance", "l1_sparse_path", "pca"}
+        selected_branches = branches or allowed_branches
+        unknown = selected_branches - allowed_branches
+        if unknown:
+            raise ValueError(f"Unknown comparator branches: {sorted(unknown)}")
+        dataset_version = str(datasets[0]["version"])
+        points = (1, 2, 4, 8, 12, 16)
+        conditions: list[tuple[str, str, ExperimentConfig]] = []
+        if "anova" in selected_branches:
+            for model in (ModelId.SVM_RBF, ModelId.RANDOM_FOREST, ModelId.XGBOOST):
+                for k in points:
+                    conditions.append(
+                        (
+                            "anova",
+                            f"C2 ANOVA {model.value} k={k}",
+                            ExperimentConfig(
+                                model=model,
+                                selector=SelectorId.ANOVA,
+                                budget_kind="original_features",
+                                k_original_features=k,
+                                dataset_version=dataset_version,
+                                search_space=preset_search_space(model),
+                            ),
+                        )
+                    )
+        if "rfe" in selected_branches:
+            for model, estimator in (
+                (ModelId.LOGISTIC_REGRESSION, "logistic_regression"),
+                (ModelId.SVM_RBF, "linear_svm"),
+            ):
+                for k in points:
+                    conditions.append(
+                        (
+                            "rfe",
+                            f"C3 RFE {model.value} k={k}",
+                            ExperimentConfig(
+                                model=model,
+                                selector=SelectorId.RFE,
+                                budget_kind="original_features",
+                                k_original_features=k,
+                                dataset_version=dataset_version,
+                                search_space=preset_search_space(model),
+                                selector_configuration={"estimator": estimator},
+                            ),
+                        )
+                    )
+        if "tree_importance" in selected_branches:
+            for model, estimator in (
+                (ModelId.RANDOM_FOREST, "random_forest"),
+                (ModelId.XGBOOST, "xgboost"),
+                (ModelId.LIGHTGBM, "lightgbm"),
+            ):
+                for k in points:
+                    conditions.append(
+                        (
+                            "tree_importance",
+                            f"C4 tree importance {model.value} k={k}",
+                            ExperimentConfig(
+                                model=model,
+                                selector=SelectorId.TREE_IMPORTANCE,
+                                budget_kind="original_features",
+                                k_original_features=k,
+                                dataset_version=dataset_version,
+                                search_space=preset_search_space(model),
+                                selector_configuration={"estimator": estimator},
+                            ),
+                        )
+                    )
+        if "l1_sparse_path" in selected_branches:
+            for selector_c in (0.01, 0.1, 1.0, 10.0):
+                conditions.append(
+                    (
+                        "l1_sparse_path",
+                        f"C5 L1 sparse logistic_regression C={selector_c:g}",
+                        ExperimentConfig(
+                            model=ModelId.LOGISTIC_REGRESSION,
+                            selector=SelectorId.L1_LOGISTIC,
+                            budget_kind="sparse_original_features",
+                            dataset_version=dataset_version,
+                            search_space=preset_search_space(ModelId.LOGISTIC_REGRESSION),
+                            selector_configuration={
+                                "estimator": "l1_logistic",
+                                "C": selector_c,
+                            },
+                        ),
+                    )
+                )
+        if "pca" in selected_branches:
+            for model in (ModelId.LOGISTIC_REGRESSION, ModelId.SVM_RBF):
+                for n_components in range(1, 17):
+                    conditions.append(
+                        (
+                            "pca",
+                            f"C6 PCA {model.value} components={n_components}",
+                            ExperimentConfig(
+                                model=model,
+                                selector=SelectorId.PCA,
+                                budget_kind="pca_components",
+                                n_components=n_components,
+                                required_raw_feature_count=16,
+                                dataset_version=dataset_version,
+                                search_space=preset_search_space(model),
+                            ),
+                        )
+                    )
+        experiments = self.list_experiments()
+        runs = self.list_runs()
+        run_by_experiment: dict[int, list[Run]] = {}
+        for run in runs:
+            run_by_experiment.setdefault(run.experiment_id, []).append(run)
+        by_branch: dict[str, dict[str, int]] = {
+            branch: {"total": 0, "completed": 0, "active": 0, "missing": 0}
+            for branch in sorted(selected_branches)
+        }
+        summary: dict[str, object] = {
+            "configuration_version": "core-comparators-v1",
+            "branches": sorted(selected_branches),
+            "total_conditions": len(conditions),
+            "completed": 0,
+            "active": 0,
+            "missing": 0,
+            "retried": 0,
+            "created_run_ids": [],
+            "by_branch": by_branch,
+        }
+        for branch, name, config in conditions:
+            branch_summary = by_branch[branch]
+            branch_summary["total"] += 1
+            matching = [item for item in experiments if item.configuration == config]
+            matching_runs = [run for item in matching for run in run_by_experiment.get(item.id, [])]
+            if any(run.status.value == "COMPLETED" for run in matching_runs):
+                summary["completed"] = int(summary["completed"]) + 1
+                branch_summary["completed"] += 1
+                continue
+            if any(run.status.value in {"QUEUED", "RUNNING"} for run in matching_runs):
+                summary["active"] = int(summary["active"]) + 1
+                branch_summary["active"] += 1
+                continue
+            summary["missing"] = int(summary["missing"]) + 1
+            branch_summary["missing"] += 1
             if not create:
                 continue
             experiment = matching[0] if matching else self.create_experiment(name, config)

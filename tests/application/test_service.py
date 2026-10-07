@@ -77,7 +77,7 @@ def test_core_selector_compatibility_is_validated_and_normalized(tmp_path) -> No
                 k_original_features=3,
             ),
         )
-    with pytest.raises(ValueError, match="variable-sparsity"):
+    with pytest.raises(ValueError, match="variable sparsity"):
         service.create_experiment(
             "invalid fixed-k L1",
             ExperimentConfig(
@@ -87,6 +87,20 @@ def test_core_selector_compatibility_is_validated_and_normalized(tmp_path) -> No
                 k_original_features=4,
             ),
         )
+    sparse = service.create_experiment(
+        "L1 sparse C 0.1",
+        ExperimentConfig(
+            ModelId.LOGISTIC_REGRESSION,
+            SelectorId.L1_LOGISTIC,
+            "sparse_original_features",
+            selector_configuration={"C": 0.1},
+        ),
+    )
+    assert sparse.configuration.k_original_features is None
+    assert sparse.configuration.selector_configuration == {
+        "estimator": "l1_logistic",
+        "C": 0.1,
+    }
     experiment = service.create_experiment(
         "frozen SVM RFE",
         ExperimentConfig(
@@ -233,6 +247,18 @@ def test_core_enqueue_is_idempotent_and_missing_baseline_is_not_calculated(tmp_p
     assert repeated["missing"] == 0
     assert repeated["active"] == 86
     assert repeated["created_run_ids"] == []
+    comparator_dry = service.enqueue_core_comparators(create=False)
+    assert comparator_dry["total_conditions"] == 84
+    assert comparator_dry["missing"] == 84
+    assert comparator_dry["by_branch"]["anova"]["total"] == 18
+    assert comparator_dry["by_branch"]["rfe"]["total"] == 12
+    assert comparator_dry["by_branch"]["tree_importance"]["total"] == 18
+    assert comparator_dry["by_branch"]["l1_sparse_path"]["total"] == 4
+    assert comparator_dry["by_branch"]["pca"]["total"] == 32
+    rfe_only = service.enqueue_core_comparators(create=False, branches={"rfe"})
+    assert rfe_only["total_conditions"] == 12
+    with pytest.raises(ValueError, match="Unknown comparator"):
+        service.enqueue_core_comparators(create=False, branches={"unknown"})
     missing = service.core_sufficiency(ModelId.LOGISTIC_REGRESSION)
     assert missing["status"] == "NOT_CALCULATED_MISSING_BASELINE"
     assert missing["minimal_sufficient_k"] is None

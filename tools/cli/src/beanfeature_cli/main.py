@@ -308,3 +308,27 @@ def core_sufficiency(
             indent=2,
         )
     )
+
+
+@core_app.command("enqueue-comparators")
+def enqueue_core_comparators(
+    confirm_compute: bool = typer.Option(
+        False, help="Idempotently queue missing Core comparator conditions"
+    ),
+    branch: Annotated[
+        list[str] | None,
+        typer.Option(
+            help=(
+                "Limit to repeatable branch names: anova, rfe, tree_importance, l1_sparse_path, pca"
+            )
+        ),
+    ] = None,
+) -> None:
+    service = create_container().service
+    plan = service.enqueue_core_comparators(
+        create=confirm_compute,
+        branches=set(branch) if branch else None,
+    )
+    typer.echo(json.dumps(plan, ensure_ascii=False, indent=2))
+    if not confirm_compute and plan["missing"]:
+        typer.echo("Dry run only. Pass --confirm-compute to enqueue the missing conditions.")
