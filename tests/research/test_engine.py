@@ -287,6 +287,81 @@ def test_l1_sparse_path_records_observed_nonzero_features(synthetic_classificati
         )
 
 
+@pytest.mark.parametrize(
+    "condition",
+    [
+        EngineCondition(
+            ModelId.SVM_RBF,
+            SelectorId.ANOVA,
+            "original_features",
+            4,
+            None,
+            42,
+            preset_search_space(ModelId.SVM_RBF, smoke=True),
+            "smoke",
+        ),
+        EngineCondition(
+            ModelId.LOGISTIC_REGRESSION,
+            SelectorId.RFE,
+            "original_features",
+            4,
+            None,
+            42,
+            preset_search_space(ModelId.LOGISTIC_REGRESSION, smoke=True),
+            "smoke",
+            {"estimator": "logistic_regression"},
+        ),
+        EngineCondition(
+            ModelId.RANDOM_FOREST,
+            SelectorId.TREE_IMPORTANCE,
+            "original_features",
+            4,
+            None,
+            42,
+            preset_search_space(ModelId.RANDOM_FOREST, smoke=True),
+            "smoke",
+            {"estimator": "random_forest"},
+        ),
+        EngineCondition(
+            ModelId.LOGISTIC_REGRESSION,
+            SelectorId.L1_LOGISTIC,
+            "sparse_original_features",
+            None,
+            None,
+            42,
+            preset_search_space(ModelId.LOGISTIC_REGRESSION, smoke=True),
+            "smoke",
+            {"estimator": "l1_logistic", "C": 10.0},
+        ),
+        EngineCondition(
+            ModelId.LOGISTIC_REGRESSION,
+            SelectorId.PCA,
+            "pca_components",
+            None,
+            4,
+            42,
+            preset_search_space(ModelId.LOGISTIC_REGRESSION, smoke=True),
+            "smoke",
+        ),
+    ],
+    ids=["anova", "rfe", "tree", "l1-sparse", "pca"],
+)
+def test_comparator_branch_nested_cv_smoke(
+    condition: EngineCondition, synthetic_classification
+) -> None:
+    features, target = synthetic_classification
+    result = run_nested_cv(features, target, condition)
+    assert len(result.folds) == 2
+    assert result.summary["outer_fold_count"] == 2
+    assert result.summary["selector"] == condition.selector.value
+    assert all(0 <= fold["macro_f1"] <= 1 for fold in result.folds)
+    if condition.selector is SelectorId.PCA:
+        assert all(fold["selected_original_features"] is None for fold in result.folds)
+        assert all(fold["representation"]["n_components"] == 4 for fold in result.folds)
+    else:
+        assert all(fold["selected_original_features"] for fold in result.folds)
+
+
 @pytest.mark.parametrize("model", list(ModelId))
 def test_core_model_can_fit_inside_pipeline(model: ModelId, synthetic_classification) -> None:
     features, target = synthetic_classification

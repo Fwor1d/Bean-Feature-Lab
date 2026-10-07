@@ -69,7 +69,7 @@ class L1SparseSelector(BaseEstimator, TransformerMixin):
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "L1SparseSelector":
         self.estimator_ = LogisticRegression(
-            l1_ratio=1.0, solver="saga", C=self.C, max_iter=1200, random_state=self.seed
+            l1_ratio=1.0, solver="saga", C=self.C, max_iter=5000, random_state=self.seed
         ).fit(X, y)
         importance = np.max(np.abs(self.estimator_.coef_), axis=0)
         self.support_ = importance > self.tolerance
