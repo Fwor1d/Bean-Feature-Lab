@@ -23,6 +23,7 @@ from .schemas import (
     ErrorResponse,
     ExperimentResponse,
     FeatureBudgetPointResponse,
+    FeatureSelectionPointResponse,
     FoldResultResponse,
     HealthResponse,
     PredictRequest,
@@ -254,6 +255,16 @@ def create_app(database_url: str | None = None) -> FastAPI:
         return [
             FeatureBudgetPointResponse.model_validate(item)
             for item in service.feature_budget_series()
+        ]
+
+    @application.get(
+        "/api/v1/features/selection-series",
+        response_model=list[FeatureSelectionPointResponse],
+    )
+    def feature_selection_series(service: Service) -> list[FeatureSelectionPointResponse]:
+        return [
+            FeatureSelectionPointResponse.model_validate(item)
+            for item in service.feature_selection_series()
         ]
 
     @application.get("/api/v1/core/sufficiency", response_model=list[CoreSufficiencyResponse])

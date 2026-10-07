@@ -79,6 +79,15 @@ def dataset_quality_summary(dataset: ValidatedDataset) -> dict[str, object]:
             "extreme_outlier_lower_fence": lower,
             "extreme_outlier_upper_fence": upper,
         }
+    correlation = features.corr(method="pearson")
+    high_correlation_pairs = []
+    for left_index, left in enumerate(features.columns):
+        for right in features.columns[left_index + 1 :]:
+            coefficient = float(correlation.loc[left, right])
+            if abs(coefficient) >= 0.85:
+                high_correlation_pairs.append(
+                    {"left": str(left), "right": str(right), "pearson_r": coefficient}
+                )
     return {
         "dataset_sha256": dataset.arff_sha256,
         "rows": len(features),
@@ -99,6 +108,20 @@ def dataset_quality_summary(dataset: ValidatedDataset) -> dict[str, object]:
             name for name, values in feature_statistics.items() if values["constant"]
         ],
         "feature_statistics": feature_statistics,
+        "pearson_correlation": {
+            str(row): {
+                str(column): float(correlation.loc[row, column]) for column in features.columns
+            }
+            for row in features.columns
+        },
+        "high_absolute_correlation_pairs": sorted(
+            high_correlation_pairs, key=lambda item: abs(float(item["pearson_r"])), reverse=True
+        ),
+        "high_correlation_threshold": 0.85,
+        "correlation_note": (
+            "Whole-dataset Pearson correlation is descriptive context only; it is not causal "
+            "and was not used outside training folds for selection."
+        ),
         "outlier_method": "Tukey extreme fences: below Q1 - 3*IQR or above Q3 + 3*IQR",
         "cleaning_applied": False,
         "note": (

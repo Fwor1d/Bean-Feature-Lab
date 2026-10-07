@@ -106,6 +106,10 @@ export interface DatasetQuality {
     extreme_outlier_lower_fence: number;
     extreme_outlier_upper_fence: number;
   }>;
+  pearson_correlation: Record<string, Record<string, number>>;
+  high_absolute_correlation_pairs: { left: string; right: string; pearson_r: number }[];
+  high_correlation_threshold: number;
+  correlation_note: string;
   outlier_method: string;
   cleaning_applied: false;
   note: string;
@@ -193,6 +197,18 @@ export interface FeatureBudgetPoint {
   macro_f1_mean: number;
   accuracy_mean: number;
   macro_f1_fold_sd_descriptive: number | null;
+  dataset_hash: string;
+  outer_split_set_sha256: string;
+}
+
+export interface FeatureSelectionPoint {
+  run_id: string;
+  model: ModelId;
+  selector: SelectorId;
+  k_original_features: number;
+  outer_fold_count: number;
+  selection_frequency: Record<string, number>;
+  pairwise_jaccard_mean: number | null;
   dataset_hash: string;
   outer_split_set_sha256: string;
 }

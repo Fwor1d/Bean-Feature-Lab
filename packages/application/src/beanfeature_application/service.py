@@ -771,6 +771,35 @@ class ApplicationService:
             )
         return points
 
+    def feature_selection_series(self) -> list[dict[str, object]]:
+        """Expose real fold-derived stability summaries for original-feature selectors."""
+        points: list[dict[str, object]] = []
+        for run in self.list_runs():
+            summary = run.summary
+            if run.status.value != "COMPLETED" or not summary:
+                continue
+            stability = summary.get("feature_stability")
+            if (
+                summary.get("evaluation_mode") != "protocol"
+                or summary.get("budget_kind") != "original_features"
+                or not isinstance(stability, dict)
+            ):
+                continue
+            points.append(
+                {
+                    "run_id": run.display_id,
+                    "model": summary["model"],
+                    "selector": summary["selector"],
+                    "k_original_features": summary["k_original_features"],
+                    "outer_fold_count": summary["outer_fold_count"],
+                    "selection_frequency": stability["selection_frequency"],
+                    "pairwise_jaccard_mean": stability["pairwise_jaccard_mean"],
+                    "dataset_hash": run.dataset_hash,
+                    "outer_split_set_sha256": summary["outer_split_set_sha256"],
+                }
+            )
+        return points
+
     def compare_runs(
         self, compact_run_id: int, baseline_run_id: int, *, persist: bool = False
     ) -> dict[str, object]:

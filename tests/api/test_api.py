@@ -24,6 +24,7 @@ def test_empty_collections(api_client) -> None:
         and item["comparisons"] == []
         for item in sufficiency.json()
     )
+    assert api_client.get("/api/v1/features/selection-series").json() == []
 
 
 def test_create_experiment_and_run_without_fake_metrics(api_client) -> None:

@@ -63,4 +63,6 @@ def test_quality_summary_reports_without_cleaning() -> None:
     assert quality["cleaning_applied"] is False
     assert quality["class_balance"]["A"] == {"count": 2, "fraction": 0.4}
     assert quality["feature_statistics"]["Area"]["extreme_outlier_count"] == 1
+    assert quality["pearson_correlation"]["Area"]["Perimeter"] == pytest.approx(1.0)
+    assert quality["high_absolute_correlation_pairs"]
     pd.testing.assert_frame_equal(frame, original)

@@ -77,6 +77,10 @@ class DatasetQualityResponse(BaseModel):
     class_balance: dict[str, ClassBalanceResponse]
     constant_columns: list[str]
     feature_statistics: dict[str, FeatureQualityResponse]
+    pearson_correlation: dict[str, dict[str, float]]
+    high_absolute_correlation_pairs: list[dict[str, str | float]]
+    high_correlation_threshold: float
+    correlation_note: str
     outlier_method: str
     cleaning_applied: Literal[False]
     note: str
@@ -212,6 +216,18 @@ class FeatureBudgetPointResponse(BaseModel):
     macro_f1_mean: float
     accuracy_mean: float
     macro_f1_fold_sd_descriptive: float | None
+    dataset_hash: str
+    outer_split_set_sha256: str
+
+
+class FeatureSelectionPointResponse(BaseModel):
+    run_id: str
+    model: ModelId
+    selector: SelectorId
+    k_original_features: int
+    outer_fold_count: int
+    selection_frequency: dict[str, float]
+    pairwise_jaccard_mean: float | None
     dataset_hash: str
     outer_split_set_sha256: str
 
