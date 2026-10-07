@@ -4,10 +4,38 @@ import { useState } from "react";
 import Link from "next/link";
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, MenuItem, Select, TextField, Typography } from "@mui/material";
 import { api, apiErrorMessage } from "@/lib/api/client";
-import type { Experiment, ModelId, SelectorId } from "@/lib/api/contracts";
+import type { Experiment, ModelId, Run, SelectorId } from "@/lib/api/contracts";
 import { modelLabel, selectorLabel } from "@/lib/science";
 
-export function ExperimentRegister({ initialExperiments, datasetVersion }: { initialExperiments: Experiment[]; datasetVersion: string | null }) {
+const CONTROL_POINTS = [1, 2, 4, 8, 12, 16];
+const selectorOptions: { id: SelectorId; label: string }[] = [
+  { id: "none", label: "Baseline · без отбора" },
+  { id: "mutual_information", label: "Mutual Information" },
+  { id: "anova", label: "ANOVA" },
+  { id: "rfe", label: "RFE" },
+  { id: "tree_importance", label: "Tree importance" },
+  { id: "pca", label: "PCA" },
+];
+const compatibility: Record<ModelId, SelectorId[]> = {
+  logistic_regression: ["none", "mutual_information", "rfe", "pca"],
+  svm_rbf: ["none", "mutual_information", "anova", "rfe", "pca"],
+  random_forest: ["none", "mutual_information", "anova", "tree_importance"],
+  xgboost: ["none", "mutual_information", "anova", "tree_importance"],
+  lightgbm: ["none", "mutual_information", "tree_importance"],
+  mlp: ["none"],
+};
+
+function durationLabel(seconds: number | null) {
+  if (seconds == null) return "Нет сопоставимых завершённых runs для оценки";
+  if (seconds < 120) return `около ${Math.max(1, Math.round(seconds))} сек`;
+  return `около ${Math.round(seconds / 60)} мин`;
+}
+
+export function ExperimentRegister({ initialExperiments, initialRuns, datasetVersion }: {
+  initialExperiments: Experiment[];
+  initialRuns: Run[];
+  datasetVersion: string | null;
+}) {
   const demoReadOnly = process.env.NEXT_PUBLIC_DEMO_READ_ONLY === "1";
   const [experiments, setExperiments] = useState(initialExperiments);
   const [name, setName] = useState("");
@@ -18,6 +46,18 @@ export function ExperimentRegister({ initialExperiments, datasetVersion }: { ini
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState<string | null>(null);
   const [review, setReview] = useState<Experiment | null>(null);
+  const allowedSelectors = compatibility[model];
+  const fixedControlPoint = selector === "anova" || selector === "rfe" || selector === "tree_importance";
+  const historicalSecondsFor = (selectedModel: ModelId) => {
+    const durations = initialRuns.flatMap(run => {
+    const experiment = initialExperiments.find(item => item.id === run.experiment_id);
+    if (run.status !== "COMPLETED" || experiment?.configuration.model !== selectedModel || !run.started_at || !run.finished_at) return [];
+    const seconds = (Date.parse(run.finished_at) - Date.parse(run.started_at)) / 1000;
+    return Number.isFinite(seconds) && seconds > 0 ? [seconds] : [];
+    }).sort((a, b) => a - b);
+    return durations.length ? durations[Math.floor(durations.length / 2)] : null;
+  };
+  const historicalSeconds = historicalSecondsFor(model);
   const create = async () => {
     setBusy(true); setError(null);
     try {
@@ -44,15 +84,23 @@ export function ExperimentRegister({ initialExperiments, datasetVersion }: { ini
       {demoReadOnly && <Alert severity="info" sx={{ mb: 2 }}>Публичная демонстрация доступна только для чтения. Создание и запуск научных заданий доступны локально через CLI или в обычном режиме разработки.</Alert>}
       <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap", alignItems: "start" }}>
         <TextField label="Название" value={name} onChange={event => setName(event.target.value)} slotProps={{ htmlInput: { maxLength: 120 } }} sx={{ minWidth: 210, flex: 2 }} />
-        <FormControl size="small" sx={{ minWidth: 180, flex: 1 }}><InputLabel id="experiment-model">Модель</InputLabel><Select labelId="experiment-model" label="Модель" value={model} onChange={event => setModel(event.target.value as ModelId)}>
+        <FormControl size="small" sx={{ minWidth: 180, flex: 1 }}><InputLabel id="experiment-model">Модель</InputLabel><Select labelId="experiment-model" label="Модель" value={model} onChange={event => {
+          const next = event.target.value as ModelId; setModel(next);
+          if (!compatibility[next].includes(selector)) { setSelector(compatibility[next].includes("mutual_information") ? "mutual_information" : "none"); setBudget(16); }
+        }}>
           <MenuItem value="logistic_regression">Logistic Regression</MenuItem><MenuItem value="svm_rbf">SVM RBF</MenuItem><MenuItem value="random_forest">Random Forest</MenuItem><MenuItem value="xgboost">XGBoost</MenuItem><MenuItem value="lightgbm">LightGBM</MenuItem><MenuItem value="mlp">MLP</MenuItem>
         </Select></FormControl>
-        <FormControl size="small" sx={{ minWidth: 190, flex: 1 }}><InputLabel id="experiment-selector">Метод</InputLabel><Select labelId="experiment-selector" label="Метод" value={selector} onChange={event => setSelector(event.target.value as SelectorId)}>
-          <MenuItem value="none">Baseline · без отбора</MenuItem><MenuItem value="mutual_information">Mutual Information</MenuItem><MenuItem value="anova">ANOVA</MenuItem><MenuItem value="rfe">RFE</MenuItem><MenuItem value="l1_logistic">L1 Logistic</MenuItem><MenuItem value="tree_importance">Tree importance</MenuItem><MenuItem value="pca">PCA</MenuItem>
+        <FormControl size="small" sx={{ minWidth: 190, flex: 1 }}><InputLabel id="experiment-selector">Метод</InputLabel><Select labelId="experiment-selector" label="Метод" value={selector} onChange={event => {
+          const next = event.target.value as SelectorId; setSelector(next);
+          if (next === "none") setBudget(16); else if (["anova", "rfe", "tree_importance"].includes(next) && !CONTROL_POINTS.includes(budget)) setBudget(4);
+        }}>
+          {selectorOptions.filter(item => allowedSelectors.includes(item.id)).map(item => <MenuItem value={item.id} key={item.id}>{item.label}</MenuItem>)}
         </Select></FormControl>
-        <TextField label={selector === "pca" ? "Компонент PCA" : "Исходных признаков"} type="number" value={selector === "none" ? 16 : budget} disabled={selector === "none"} onChange={event => setBudget(Number(event.target.value))} slotProps={{ htmlInput: { min: 1, max: 16 } }} sx={{ width: 160 }} />
+        {fixedControlPoint ? <FormControl size="small" sx={{ width: 180 }}><InputLabel id="experiment-budget">Контрольное k</InputLabel><Select labelId="experiment-budget" label="Контрольное k" value={budget} onChange={event => setBudget(Number(event.target.value))}>{CONTROL_POINTS.map(point => <MenuItem key={point} value={point}>{point} исходных</MenuItem>)}</Select></FormControl> :
+          <TextField label={selector === "pca" ? "Компонент PCA" : "Исходных признаков"} type="number" value={selector === "none" ? 16 : budget} disabled={selector === "none"} onChange={event => setBudget(Number(event.target.value))} slotProps={{ htmlInput: { min: 1, max: 16 } }} sx={{ width: 160 }} />}
         <Button variant="contained" onClick={create} disabled={demoReadOnly || busy || !name.trim() || !datasetVersion || (selector !== "none" && (!Number.isInteger(budget) || budget < 1 || budget > 16))} sx={{ minHeight: 40 }}>Сохранить</Button>
       </Box>
+      <Typography color="text.secondary" sx={{ mt: 1.5, fontSize: 12 }}>1 условие · 15 outer folds · 4 inner folds · историческая медиана для {modelLabel[model]}: {durationLabel(historicalSeconds)}. Оценка ориентировочная и не является benchmark.</Typography>
       {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
       {queued && <Alert severity="info" sx={{ mt: 2 }}>{queued} <Link href="/runs">Открыть журнал</Link></Alert>}
     </section>
@@ -74,6 +122,7 @@ export function ExperimentRegister({ initialExperiments, datasetVersion }: { ini
             <div><dt>Представление</dt><dd>{review.configuration.budget_kind === "pca_components" ? `${review.configuration.n_components} компонент PCA при 16 исходных измерениях` : `${review.configuration.k_original_features} исходных признаков`}</dd></div>
             <div><dt>Протокол</dt><dd>{review.configuration.evaluation_mode === "smoke" ? "Технический smoke" : "Outer: 5 folds × 3 repeats; inner: 4 folds"} · seed {review.configuration.seed}</dd></div>
             <div><dt>Поиск</dt><dd>{JSON.stringify(review.configuration.search_space ?? {})}</dd></div>
+            <div><dt>Ожидаемый объём</dt><dd>1 условие · 15 outer folds · inner CV 4 folds · {durationLabel(historicalSecondsFor(review.configuration.model))}</dd></div>
             <div><dt>Ресурсы</dt><dd>Время и latency измеряются; peak memory пока не рассчитано.</dd></div>
           </dl>
         </>}
