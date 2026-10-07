@@ -279,7 +279,10 @@ def enqueue_core_mi(
     plan = service.enqueue_core_matrix(create=confirm_compute)
     typer.echo(json.dumps(plan, ensure_ascii=False, indent=2))
     if not confirm_compute and plan["missing"]:
-        typer.echo("Dry run only. Pass --confirm-compute to enqueue the missing conditions.")
+        typer.echo(
+            "Dry run only. Pass --confirm-compute to enqueue the missing conditions.",
+            err=True,
+        )
 
 
 @core_app.command("sufficiency")
@@ -331,4 +334,7 @@ def enqueue_core_comparators(
     )
     typer.echo(json.dumps(plan, ensure_ascii=False, indent=2))
     if not confirm_compute and plan["missing"]:
-        typer.echo("Dry run only. Pass --confirm-compute to enqueue the missing conditions.")
+        typer.echo(
+            "Dry run only. Pass --confirm-compute to enqueue the missing conditions.",
+            err=True,
+        )
