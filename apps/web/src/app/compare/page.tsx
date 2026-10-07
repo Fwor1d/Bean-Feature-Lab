@@ -3,7 +3,7 @@ import { Alert, Button, Chip, Stack, Table, TableBody, TableCell, TableHead, Tab
 import { ComparisonSelector, type ComparisonOption } from "@/components/ComparisonSelector";
 import { DescriptiveComparisonSelector, type DescriptiveRunOption } from "@/components/DescriptiveComparisonSelector";
 import { api, apiErrorMessage } from "@/lib/api/client";
-import type { DescriptiveComparison, PairedComparison, Run, RunSummary } from "@/lib/api/contracts";
+import type { DescriptiveComparison, PairedComparison, Run, RunSummary, ScientificSummary } from "@/lib/api/contracts";
 import { metric, modelLabel, selectorLabel } from "@/lib/science";
 
 interface CompareParams {
@@ -13,6 +13,17 @@ interface CompareParams {
   left?: string;
   right?: string;
 }
+
+function budgetDescription(summary: ScientificSummary) {
+  if (summary.budget_kind === "pca_components") return `${summary.n_components} PCA components`;
+  if (summary.budget_kind === "sparse_original_features") {
+    const counts = summary.observed_nonzero_feature_counts ?? [];
+    return counts.length ? `L1 sparse: ${Math.min(...counts)}–${Math.max(...counts)} по folds` : "L1 sparse · variable";
+  }
+  return `${summary.k_original_features} исходных признаков`;
+}
+
+const bytes = (value: number | undefined) => value == null ? "Не рассчитано" : `${value.toLocaleString("ru-RU")} байт`;
 
 export default async function ComparePage({ searchParams }: { searchParams: Promise<CompareParams> }) {
   const params = await searchParams;
@@ -65,10 +76,13 @@ async function DescriptiveView({ params }: { params: CompareParams }) {
         <dl className="metric-list">
           <div><dt>Условие A</dt><dd><Link href={`/runs/${selected.left}`}>{result.left_run_id}</Link> · {modelLabel[result.left_summary.model]} · {selectorLabel[result.left_summary.selector]} · Macro-F1 {metric(result.left_summary.macro_f1_mean)}</dd></div>
           <div><dt>Условие B</dt><dd><Link href={`/runs/${selected.right}`}>{result.right_run_id}</Link> · {modelLabel[result.right_summary.model]} · {selectorLabel[result.right_summary.selector]} · Macro-F1 {metric(result.right_summary.macro_f1_mean)}</dd></div>
+          <div><dt>Представление A / B</dt><dd>{budgetDescription(result.left_summary)} / {budgetDescription(result.right_summary)}</dd></div>
           <div><dt>Средняя Δ Macro-F1</dt><dd>{metric(result.comparison.mean_macro_f1_difference_left_minus_right, 5)}</dd></div>
           <div><dt>Средняя Δ Accuracy</dt><dd>{metric(result.comparison.mean_accuracy_difference_left_minus_right, 5)}</dd></div>
+          <div><dt>Mean Jaccard A / B</dt><dd>{metric(result.left_summary.feature_stability?.pairwise_jaccard_mean)} / {metric(result.right_summary.feature_stability?.pairwise_jaccard_mean)}</dd></div>
           <div><dt>Nested search A / B</dt><dd>{result.left_resources.total_nested_search_seconds.toFixed(1)} / {result.right_resources.total_nested_search_seconds.toFixed(1)} s</dd></div>
           <div><dt>Размер pipeline A / B</dt><dd>{metric(result.left_resources.serialized_pipeline_bytes?.median, 0)} / {metric(result.right_resources.serialized_pipeline_bytes?.median, 0)} bytes</dd></div>
+          <div><dt>Incremental peak RSS A / B</dt><dd>{bytes(result.left_resources.process_tree_measurement?.incremental_peak_rss_bytes)} / {bytes(result.right_resources.process_tree_measurement?.incremental_peak_rss_bytes)}</dd></div>
         </dl>
         <p className="table-note">{result.comparison.note} Положительная разность означает большее значение у условия A только в этой описательной paired-CV сводке.</p>
       </section>
