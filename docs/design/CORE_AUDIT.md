@@ -11,6 +11,7 @@ Scope: the existing Instrument Workstation identity, real API-backed scientific 
 - Dataset hashes/schema and quality diagnostics are collapsible on Features, keeping verified dataset status visible and analytical controls closer to the first viewport.
 - L1 results have a dedicated sparse-path table with actual per-fold nonzero counts. They are not mislabeled as an absent fixed-k curve.
 - Historical run detail explains that its null sufficient-k field is immutable and links to separately calculated Core paired decisions.
+- The final integration check found that the web proxy rejected dotted export filenames despite a healthy FastAPI export. Only the five known run export names are now allowed, with traversal rejection tests and forwarded Content-Disposition. Production CSV smoke returned 200 and exactly 15 fold rows plus the header.
 
 The technical reviewer ran `impeccable detect --json apps/web/src`: exit 0, zero findings, no suppressions or false-positive dismissals. That detector result is not an exhaustive accessibility certification.
 
