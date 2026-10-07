@@ -177,6 +177,21 @@ def test_synthetic_end_to_end_persistence_roundtrip(tmp_path) -> None:
     service.artifacts = artifacts
     service.runs.artifacts = artifacts
     service.dataset_store = TestDatasetStore()
+
+    class TestMeasurement:
+        def finish(self):
+            return {
+                "status": "CALCULATED",
+                "peak_process_tree_rss_bytes": 120_000_000,
+                "baseline_process_tree_rss_bytes": 100_000_000,
+                "incremental_peak_rss_bytes": 20_000_000,
+            }
+
+    class TestResourceMonitor:
+        def start(self):
+            return TestMeasurement()
+
+    service.resource_monitor = TestResourceMonitor()
     experiment = service.create_experiment(
         "synthetic integration test",
         ExperimentConfig(
@@ -212,8 +227,9 @@ def test_synthetic_end_to_end_persistence_roundtrip(tmp_path) -> None:
     assert resources["total_nested_search_seconds"] > 0
     assert resources["inference_latency_ms"]["single_row"]["samples"] == 6
     assert resources["serialized_pipeline_bytes"]["median"] > 0
-    assert resources["peak_memory_status"] == "NOT_CALCULATED"
-    assert resources["peak_memory_bytes"] is None
+    assert resources["peak_memory_status"] == "CALCULATED"
+    assert resources["peak_memory_bytes"]["median"] == 120_000_000
+    assert resources["process_tree_measurement"]["incremental_peak_rss_bytes"] == 20_000_000
     reproduced = service.reproduce_run(queued.id)
     assert reproduced.status.value == "QUEUED"
     reproduced_config = service.get_experiment(reproduced.experiment_id).configuration

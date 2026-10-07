@@ -37,6 +37,7 @@ from .contracts import (
     ExperimentConfig,
     ExperimentRepository,
     MetadataProvider,
+    ResourceMonitor,
     Run,
     RunRepository,
     ScientificArtifactStore,
@@ -62,6 +63,7 @@ class ApplicationService:
         dataset_store: DatasetStore | None = None,
         artifacts: ScientificArtifactStore | None = None,
         deployment_models: DeploymentModelStore | None = None,
+        resource_monitor: ResourceMonitor | None = None,
     ) -> None:
         self.experiments = experiments
         self.runs = runs
@@ -70,6 +72,7 @@ class ApplicationService:
         self.dataset_store = dataset_store
         self.artifacts = artifacts
         self.deployment_models = deployment_models
+        self.resource_monitor = resource_monitor
 
     def train_deployment_classifier(self) -> dict[str, object]:
         """Refit the completed 16-feature baseline for inference, never for evaluation."""
@@ -691,6 +694,10 @@ class ApplicationService:
             self.runs.fail(run.id, "ML infrastructure is unavailable")
             return self.get_run(run.id)
         try:
+            measurement = self.resource_monitor.start() if self.resource_monitor else None
+        except Exception:
+            measurement = None
+        try:
             experiment = self.get_experiment(run.experiment_id)
             dataset, manifest = self.dataset_store.load()
             config = experiment.configuration
@@ -732,6 +739,14 @@ class ApplicationService:
                     or self.get_run(run.id).status.value == "CANCELLED"
                 ),
             )
+            if measurement:
+                try:
+                    result.summary["process_resource_measurement"] = measurement.finish()
+                except Exception as exc:
+                    result.summary["process_resource_measurement"] = {
+                        "status": "NOT_CALCULATED",
+                        "reason": f"{type(exc).__name__}: {exc}",
+                    }
             payload = {
                 "run_id": run.display_id,
                 "experiment_id": experiment.id,
@@ -756,13 +771,29 @@ class ApplicationService:
                 raise InterruptedError("Run state changed before completion")
             return completed
         except InterruptedError:
+            if measurement:
+                try:
+                    measurement.finish()
+                except Exception:
+                    pass
             if self.get_run(run.id).status.value == "RUNNING":
                 self.runs.fail(run.id, "Worker interrupted; partial folds are not final results")
             return self.get_run(run.id)
         except Exception as exc:
+            resource_measurement: dict[str, object] | None = None
+            if measurement:
+                try:
+                    resource_measurement = measurement.finish()
+                except Exception:
+                    resource_measurement = None
             detail_path = f"{run.display_id}/error.json"
             self.artifacts.write_json(
-                detail_path, {"error_type": type(exc).__name__, "traceback": traceback.format_exc()}
+                detail_path,
+                {
+                    "error_type": type(exc).__name__,
+                    "traceback": traceback.format_exc(),
+                    "process_resource_measurement": resource_measurement,
+                },
             )
             self.runs.fail(run.id, f"{type(exc).__name__}: {exc}", detail_path)
             return self.get_run(run.id)
@@ -1048,6 +1079,13 @@ class ApplicationService:
             for fold in folds
             if fold.get("peak_memory_bytes") is not None
         ]
+        process_measurement = payload["summary"].get("process_resource_measurement")
+        if (
+            not peak_values
+            and isinstance(process_measurement, dict)
+            and process_measurement.get("status") == "CALCULATED"
+        ):
+            peak_values = [int(process_measurement["peak_process_tree_rss_bytes"])]
         return {
             "run_id": payload["run_id"],
             "measurement_scope": "outer-fold full preprocessing-and-model pipelines",
@@ -1062,6 +1100,7 @@ class ApplicationService:
             "peak_memory_reason": None
             if peak_values
             else "No reliable isolated process-tree RSS measurement was recorded for this run.",
+            "process_tree_measurement": process_measurement,
             "software_hardware_profile": payload["provenance"],
             "timing_note": (
                 "Latency includes the full fitted preprocessing pipeline, uses fold-local warm-up, "

@@ -302,6 +302,21 @@ export interface RunResources {
   peak_memory_bytes: ResourceDistribution | null;
   peak_memory_status: "CALCULATED" | "NOT_CALCULATED";
   peak_memory_reason: string | null;
+  process_tree_measurement: {
+    status: "CALCULATED" | "NOT_CALCULATED";
+    measurement_kind?: string;
+    scope?: string;
+    baseline_process_tree_rss_bytes?: number;
+    peak_process_tree_rss_bytes?: number;
+    incremental_peak_rss_bytes?: number;
+    maximum_child_processes?: number;
+    sampling_interval_seconds?: number;
+    rss_samples?: number;
+    measurement_wall_seconds?: number;
+    hardware?: Record<string, string | number | null>;
+    note?: string;
+    reason?: string;
+  } | null;
   software_hardware_profile: RunDetail["provenance"];
   timing_note: string;
 }

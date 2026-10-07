@@ -92,8 +92,9 @@ export default async function RunDetailPage({ params, searchParams }: {
           <div><dt>Latency batch=1000, median</dt><dd>{resources.inference_latency_ms.batch_1000 ? `${metric(resources.inference_latency_ms.batch_1000.median, 3)} мс` : "Не рассчитано"}</dd></div>
           <div><dt>Pipeline size, median</dt><dd>{resources.serialized_pipeline_bytes ? `${Math.round(resources.serialized_pipeline_bytes.median).toLocaleString("ru-RU")} байт` : "Не рассчитано"}</dd></div>
           <div><dt>Peak memory</dt><dd>{resources.peak_memory_bytes ? `${Math.round(resources.peak_memory_bytes.median).toLocaleString("ru-RU")} байт` : "Не рассчитано"}</dd></div>
+          <div><dt>Incremental peak RSS</dt><dd>{resources.process_tree_measurement?.incremental_peak_rss_bytes != null ? `${resources.process_tree_measurement.incremental_peak_rss_bytes.toLocaleString("ru-RU")} байт` : "Не рассчитано"}</dd></div>
         </dl>
-        <p className="table-note">{resources.timing_note} {resources.peak_memory_reason}</p>
+        <p className="table-note">{resources.timing_note} {resources.peak_memory_reason} {resources.process_tree_measurement?.note}</p>
       </section>}
       {folds.length > 0 && <section className="table-surface stack-section" aria-labelledby="folds-title"><div className="table-heading"><h2 id="folds-title">Outer-fold результаты</h2><span className="table-note">{folds.length} из {scientific?.outer_fold_count} · ссылки открывают fold</span></div><FoldGrid runId={id} folds={folds} /></section>}
       {selected && <section className="section-surface stack-section" aria-labelledby="fold-detail-title">

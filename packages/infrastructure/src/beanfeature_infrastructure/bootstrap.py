@@ -9,6 +9,7 @@ from .deployment import LocalDeploymentModelStore
 from .files import ArtifactStore
 from .metadata import EnvironmentMetadata, SQLiteWorkerHeartbeat
 from .repositories import SQLiteDatasetRepository, SQLiteExperimentRepository, SQLiteRunRepository
+from .resources import ProcessTreeResourceMonitor
 
 
 @dataclass
@@ -18,7 +19,9 @@ class Container:
     heartbeat: SQLiteWorkerHeartbeat
 
 
-def create_container(database_url: str | None = None) -> Container:
+def create_container(
+    database_url: str | None = None, *, measure_process_resources: bool = False
+) -> Container:
     engine = make_engine(database_url)
     sessions = make_session_factory(engine)
     metadata = EnvironmentMetadata(engine, sessions)
@@ -34,6 +37,7 @@ def create_container(database_url: str | None = None) -> Container:
             dataset_store=dataset_store,
             artifacts=artifacts,
             deployment_models=LocalDeploymentModelStore(),
+            resource_monitor=ProcessTreeResourceMonitor() if measure_process_resources else None,
         ),
         metadata=metadata,
         heartbeat=SQLiteWorkerHeartbeat(sessions),

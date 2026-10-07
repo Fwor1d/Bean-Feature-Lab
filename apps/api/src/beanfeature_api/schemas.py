@@ -255,6 +255,7 @@ class RunResourcesResponse(BaseModel):
     peak_memory_bytes: ResourceDistributionResponse | None
     peak_memory_status: Literal["CALCULATED", "NOT_CALCULATED"]
     peak_memory_reason: str | None
+    process_tree_measurement: dict[str, object] | None = None
     software_hardware_profile: dict[str, object]
     timing_note: str
 

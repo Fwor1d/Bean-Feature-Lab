@@ -16,7 +16,7 @@ def main() -> None:
 
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
-    container = create_container()
+    container = create_container(measure_process_resources=True)
     recovered = container.service.recover_interrupted_runs()
     logger.info("worker.start executor=nested_cv recovered_failed=%s", recovered)
 
