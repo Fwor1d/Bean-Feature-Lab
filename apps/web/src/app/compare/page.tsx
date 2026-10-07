@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Alert, Chip, Table, TableBody, TableCell, TableHead, TableRow } from "@mui/material";
+import { ComparisonSelector, type ComparisonOption } from "@/components/ComparisonSelector";
 import { api, apiErrorMessage } from "@/lib/api/client";
 import type { PairedComparison, Run, RunSummary } from "@/lib/api/contracts";
 import { metric, modelLabel } from "@/lib/science";
@@ -13,6 +14,7 @@ export default async function ComparePage({ searchParams }: { searchParams: Prom
   let compactSummary: RunSummary | null = null;
   let baselineSummary: RunSummary | null = null;
   let pairOptions: { compact: Run; baseline: Run }[] = [];
+  let selectorOptions: ComparisonOption[] = [];
   try {
     const [runs, experiments] = await Promise.all([api.runs(), api.experiments()]);
     const configs = new Map(experiments.map(item => [item.id, item.configuration]));
@@ -26,6 +28,14 @@ export default async function ComparePage({ searchParams }: { searchParams: Prom
       }).map(other => ({ compact: candidate, baseline: other }));
     });
     pairOptions = pairs;
+    selectorOptions = pairs.flatMap(pair => {
+      const configuration = configs.get(pair.compact.experiment_id);
+      return configuration?.k_original_features ? [{
+        compactId: pair.compact.id, baselineId: pair.baseline.id,
+        compactDisplayId: pair.compact.display_id, baselineDisplayId: pair.baseline.display_id,
+        model: configuration.model, k: configuration.k_original_features,
+      }] : [];
+    }).sort((a, b) => a.model.localeCompare(b.model) || a.k - b.k);
     const selected = pairs.find(pair => pair.compact.id === Number(params.compact) && pair.baseline.id === Number(params.baseline)) ?? pairs[0];
     if (selected) {
       compact = selected.compact; baseline = selected.baseline;
@@ -40,7 +50,7 @@ export default async function ComparePage({ searchParams }: { searchParams: Prom
     <p className="page-question">Компактная MI-конфигурация сопоставляется с baseline той же модели на тех же outer folds. Решение использует заранее зафиксированный corrected repeated-CV interval и margin 0,01.</p>
     {error && <Alert severity="warning" sx={{ mb: 2 }}>{error}</Alert>}
     {comparison && compact && baseline ? <>
-      {pairOptions.length > 1 && <details className="comparison-picker"><summary>Выбрать пару runs · {pairOptions.length} вариантов</summary><div>{pairOptions.map(pair => <Link key={`${pair.compact.id}-${pair.baseline.id}`} href={`/compare?compact=${pair.compact.id}&baseline=${pair.baseline.id}`} aria-current={pair.compact.id === compact.id && pair.baseline.id === baseline.id ? "page" : undefined}>{pair.compact.display_id} → {pair.baseline.display_id}</Link>)}</div></details>}
+      {selectorOptions.length > 1 && <ComparisonSelector options={selectorOptions} selected={{ compactId: compact.id, baselineId: baseline.id }} />}
       <section className="section-surface" aria-labelledby="comparison-title">
         <h2 id="comparison-title" className="section-title">{modelLabel[compactSummary!.summary!.model]} · исходные признаки</h2>
         <div className="status-line" style={{ marginBottom: 16 }}><Chip label={sameSplits ? "Outer splits совпадают" : "Разбиения не совпали"} color={sameSplits ? "success" : "error"} size="small" variant="outlined" /><span>Dataset SHA-256 <code>{comparison.dataset_hash}</code></span></div>
