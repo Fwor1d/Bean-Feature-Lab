@@ -127,7 +127,7 @@ export function ExperimentRegister({ initialExperiments, initialRuns, datasetVer
             <div><dt>Протокол</dt><dd>{review.configuration.evaluation_mode === "smoke" ? "Технический smoke" : "Outer: 5 folds × 3 repeats; inner: 4 folds"} · seed {review.configuration.seed}</dd></div>
             <div><dt>Поиск</dt><dd>{JSON.stringify(review.configuration.search_space ?? {})}</dd></div>
             <div><dt>Ожидаемый объём</dt><dd>1 условие · 15 outer folds · inner CV 4 folds · {durationLabel(historicalSecondsFor(review.configuration.model))}</dd></div>
-            <div><dt>Ресурсы</dt><dd>Время и latency измеряются; peak memory пока не рассчитано.</dd></div>
+            <div><dt>Ресурсы</dt><dd>Время и full-pipeline latency сохраняются; новые runs измеряют process-tree peak RSS в изолированном процессе.</dd></div>
           </dl>
         </>}
       </DialogContent>

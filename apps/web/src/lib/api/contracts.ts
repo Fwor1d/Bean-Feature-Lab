@@ -215,6 +215,7 @@ export interface ScientificSummary {
   accuracy_mean: number;
   repeat_macro_f1_means: number[];
   feature_stability: FeatureStability | null;
+  observed_nonzero_feature_counts?: number[] | null;
   sufficient_k: number | null;
   sufficiency_status: string;
   sufficiency_margin_macro_f1: number;

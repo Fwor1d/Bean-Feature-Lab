@@ -52,6 +52,7 @@ export default async function RunDetailPage({ params, searchParams }: {
         {scientific ? <>
           {scientific.evaluation_mode === "smoke" && <Alert severity="warning" sx={{ mb: 2 }}>Технический smoke · 2 outer folds. Не является итоговым научным результатом.</Alert>}
           <dl className="metric-list"><div><dt>Macro-F1, среднее</dt><dd>{metric(scientific.macro_f1_mean)}</dd></div><div><dt>Accuracy, среднее</dt><dd>{metric(scientific.accuracy_mean)}</dd></div><div><dt>Outer folds</dt><dd>{scientific.outer_fold_count}</dd></div><div><dt>Inner folds</dt><dd>{scientific.inner_fold_count}</dd></div><div><dt>Достаточное k</dt><dd>{metric(scientific.sufficient_k, 0)}</dd></div></dl>
+          {scientific.observed_nonzero_feature_counts?.length ? <p className="table-note">L1 sparse path: фактическое число ненулевых исходных признаков по outer folds — {scientific.observed_nonzero_feature_counts.join(", ")}. Это наблюдаемая sparsity, а не fixed-k budget.</p> : null}
           <p className="table-note">Разброс Macro-F1 по зависимым folds (описательный SD): {metric(scientific.macro_f1_fold_sd_descriptive)}. {scientific.dispersion_note}</p>
           <p className="table-note">Протокол: {scientific.cv_protocol_version} · seed {scientific.seed}. PCA-компоненты не считаются исходными признаками.</p>
         </> : <p>Не рассчитано. Полные outer folds ещё не сохранены.</p>}

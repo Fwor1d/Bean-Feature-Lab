@@ -32,6 +32,10 @@ export default async function FeaturesPage({ searchParams }: { searchParams: Pro
   const selectors = [...new Set(validSeries.filter(point => !selected || point.model === selected.model).map(point => point.selector))].sort() as SelectorId[];
   const heatmapPoints = selected ? validSeries.filter(point => point.model === selected.model && point.selector === selected.selector && point.outer_split_set_sha256 === selected.outer_split_set_sha256) : [];
   const budgets = heatmapPoints.map(point => point.k_original_features).sort((a, b) => a - b);
+  const expectedBudgets = selected && ["anova", "rfe", "tree_importance"].includes(selected.selector) ? 6 : 16;
+  const firstSelectedBudget = new Map((manifest?.features ?? []).map(feature => [feature,
+    heatmapPoints.filter(point => (point.selection_frequency[feature] ?? 0) > 0)
+      .map(point => point.k_original_features).sort((a, b) => a - b)[0] ?? null]));
   return <>
     <h1 className="page-heading">Датасет и признаки</h1>
     <p className="page-question">Проверенный официальный ARFF UCI 602. Канонические имена сохранены; частоты отбора ниже относятся только к конкретному завершённому run.</p>
@@ -62,13 +66,13 @@ export default async function FeaturesPage({ searchParams }: { searchParams: Pro
         <div className="table-heading"><h2 id="features-title">Исходные признаки</h2><span className="table-note">Имена строго из официального ARFF · без переименования</span></div>
         {selected && <FeatureExplorerControls models={models} selectors={selectors} budgets={budgets} selected={{ model: selected.model, selector: selected.selector, k: selected.k_original_features }} />}
         {frequency && sourceRunId && <p className="empty-copy">Условие: {modelLabel[selected!.model]} · {selectorLabel[selected!.selector]} · k={selected!.k_original_features}. Частоты из <Link href={`/runs/${sourceRunId}`}>{selected!.run_id}</Link> · {selected!.outer_fold_count} outer folds; mean pairwise Jaccard {metric(selected!.pairwise_jaccard_mean)}. Это устойчивость отбора, не causal importance.</p>}
-        <Table size="small" aria-label="Канонические имена признаков"><TableHead><TableRow><TableCell>№</TableCell><TableCell>Исходный атрибут</TableCell><TableCell align="right">Наблюдаемый диапазон</TableCell><TableCell align="right">Экстремальные</TableCell><TableCell align="right">Частота отбора</TableCell></TableRow></TableHead><TableBody>{manifest.features.map((name, index) => {
+        <Table size="small" aria-label="Канонические имена признаков"><TableHead><TableRow><TableCell>№</TableCell><TableCell>Исходный атрибут</TableCell><TableCell align="right">Наблюдаемый диапазон</TableCell><TableCell align="right">Экстремальные</TableCell><TableCell align="right">Впервые при k</TableCell><TableCell align="right">Частота отбора</TableCell></TableRow></TableHead><TableBody>{manifest.features.map((name, index) => {
           const stats = quality?.feature_statistics[name];
-          return <TableRow key={name}><TableCell>{index + 1}</TableCell><TableCell>{name}</TableCell><TableCell align="right">{stats ? `${stats.minimum.toLocaleString("ru-RU")} … ${stats.maximum.toLocaleString("ru-RU")}` : "Не рассчитано"}</TableCell><TableCell align="right">{stats?.extreme_outlier_count ?? "Не рассчитано"}</TableCell><TableCell align="right">{frequency ? metric(frequency[name], 2) : "Не рассчитано"}</TableCell></TableRow>;
+          return <TableRow key={name}><TableCell>{index + 1}</TableCell><TableCell>{name}</TableCell><TableCell align="right">{stats ? `${stats.minimum.toLocaleString("ru-RU")} … ${stats.maximum.toLocaleString("ru-RU")}` : "Не рассчитано"}</TableCell><TableCell align="right">{stats?.extreme_outlier_count ?? "Не рассчитано"}</TableCell><TableCell align="right">{firstSelectedBudget.get(name) ?? "не выбран"}</TableCell><TableCell align="right">{frequency ? metric(frequency[name], 2) : "Не рассчитано"}</TableCell></TableRow>;
         })}</TableBody></Table>
       </section>
       {selected && heatmapPoints.length > 0 && <section className="figure-surface" aria-labelledby="selection-map-title">
-        <div className="figure-heading"><h2 id="selection-map-title">Частота отбора по бюджетам</h2><Chip label={`${modelLabel[selected.model]} · ${heatmapPoints.length}/16 k`} size="small" variant="outlined" /></div>
+        <div className="figure-heading"><h2 id="selection-map-title">Частота отбора по бюджетам</h2><Chip label={`${modelLabel[selected.model]} · ${heatmapPoints.length}/${expectedBudgets} условий`} size="small" variant="outlined" /></div>
         <FeatureSelectionHeatmap features={manifest.features} points={heatmapPoints} />
         <p className="table-note">Каждая ячейка — реальная доля outer folds, в которых признак выбран. Отсутствующие k не интерполируются.</p>
       </section>}
