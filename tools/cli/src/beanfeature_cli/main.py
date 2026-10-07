@@ -1,5 +1,6 @@
 import json
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -7,7 +8,9 @@ import typer
 
 from beanfeature_application.contracts import ExperimentConfig
 from beanfeature_application.service import NotFoundError
+from beanfeature_infrastructure.benchmark import benchmark_deployment_model
 from beanfeature_infrastructure.bootstrap import create_container
+from beanfeature_infrastructure.files import ArtifactStore
 from beanfeature_research.contracts import ModelId, SelectorId
 
 app = typer.Typer(help="BeanFeature Lab reproducible local research CLI.")
@@ -55,6 +58,30 @@ def predict_classifier_example() -> None:
                 "correct": prediction["predicted_class"] == example["actual_class"],
                 "demo_note": "One UCI row; not an evaluation metric.",
             },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+@classifier_app.command("benchmark")
+def benchmark_classifier(
+    repeats: Annotated[int, typer.Option(min=5, max=1_000)] = 30,
+) -> None:
+    """Measure deployment latency, size, and process-tree RSS outside scientific CV."""
+    result = benchmark_deployment_model(repeats=repeats)
+    measured_at = datetime.now(UTC)
+    payload = {**result, "measured_at_utc": measured_at.isoformat()}
+    relative = f"benchmarks/{result['model_id']}-{measured_at:%Y%m%dT%H%M%SZ}.json"
+    store = ArtifactStore(Path("artifacts/models"))
+    digest = store.write_json(relative, payload)
+    store.write_json(
+        "benchmarks/latest.json",
+        {"artifact_relative_path": relative, "artifact_sha256": digest},
+    )
+    typer.echo(
+        json.dumps(
+            {**payload, "artifact_relative_path": relative, "artifact_sha256": digest},
             ensure_ascii=False,
             indent=2,
         )

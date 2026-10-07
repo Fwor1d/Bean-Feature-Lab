@@ -126,6 +126,34 @@ class ClassifierExampleResponse(BaseModel):
     note: str
 
 
+class ClassifierLatencyResponse(BaseModel):
+    rows: int
+    repeats: int
+    median_ms: float
+    p95_ms: float
+    samples_ms: list[float]
+
+
+class ClassifierBenchmarkResponse(BaseModel):
+    status: Literal["CALCULATED"]
+    benchmark_kind: str
+    model_id: str
+    source_run: str
+    dataset_sha256: str
+    peak_process_tree_rss_bytes: int
+    baseline_process_tree_rss_bytes: int
+    incremental_peak_rss_bytes: int
+    maximum_child_processes: int
+    sampling_interval_seconds: float
+    rss_samples: int
+    latency: dict[str, ClassifierLatencyResponse]
+    serialized_pipeline_bytes: int
+    warmup_repetitions: int
+    hardware: dict[str, str | int]
+    note: str
+    measured_at_utc: str
+
+
 class ExperimentConfigDTO(BaseModel):
     model: ModelId
     selector: SelectorId
@@ -206,6 +234,28 @@ class RunSummaryResponse(BaseModel):
     status: RunStatus
     result_state: ResultState
     summary: dict[str, object] | None
+
+
+class ResourceDistributionResponse(BaseModel):
+    samples: int
+    median: float
+    p95: float
+    minimum: float
+    maximum: float
+
+
+class RunResourcesResponse(BaseModel):
+    run_id: str
+    measurement_scope: str
+    total_nested_search_seconds: float
+    total_outer_refit_seconds: float
+    inference_latency_ms: dict[str, ResourceDistributionResponse | None]
+    serialized_pipeline_bytes: ResourceDistributionResponse | None
+    peak_memory_bytes: ResourceDistributionResponse | None
+    peak_memory_status: Literal["CALCULATED", "NOT_CALCULATED"]
+    peak_memory_reason: str | None
+    software_hardware_profile: dict[str, object]
+    timing_note: str
 
 
 class FeatureBudgetPointResponse(BaseModel):

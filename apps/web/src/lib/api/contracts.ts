@@ -142,6 +142,32 @@ export interface ClassifierExample {
   note: string;
 }
 
+export interface ClassifierBenchmark {
+  status: "CALCULATED";
+  benchmark_kind: string;
+  model_id: string;
+  source_run: string;
+  dataset_sha256: string;
+  peak_process_tree_rss_bytes: number;
+  baseline_process_tree_rss_bytes: number;
+  incremental_peak_rss_bytes: number;
+  maximum_child_processes: number;
+  sampling_interval_seconds: number;
+  rss_samples: number;
+  latency: Record<"single_row" | "batch_1000", {
+    rows: number;
+    repeats: number;
+    median_ms: number;
+    p95_ms: number;
+    samples_ms: number[];
+  }>;
+  serialized_pipeline_bytes: number;
+  warmup_repetitions: number;
+  hardware: Record<string, string | number>;
+  note: string;
+  measured_at_utc: string;
+}
+
 export interface ClassifierPrediction {
   model_id: string;
   source_run: string;
@@ -240,6 +266,31 @@ export interface RunVerification {
   result_sha256?: string;
   dataset_sha256?: string;
   fingerprint?: string;
+}
+
+export interface ResourceDistribution {
+  samples: number;
+  median: number;
+  p95: number;
+  minimum: number;
+  maximum: number;
+}
+
+export interface RunResources {
+  run_id: string;
+  measurement_scope: string;
+  total_nested_search_seconds: number;
+  total_outer_refit_seconds: number;
+  inference_latency_ms: {
+    single_row: ResourceDistribution | null;
+    batch_1000: ResourceDistribution | null;
+  };
+  serialized_pipeline_bytes: ResourceDistribution | null;
+  peak_memory_bytes: ResourceDistribution | null;
+  peak_memory_status: "CALCULATED" | "NOT_CALCULATED";
+  peak_memory_reason: string | null;
+  software_hardware_profile: RunDetail["provenance"];
+  timing_note: string;
 }
 
 export interface FoldResult {

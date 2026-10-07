@@ -17,6 +17,7 @@ class LocalDeploymentModelStore:
     MODEL = "lr-uci-602-full16.joblib"
     METADATA = "lr-uci-602-full16.json"
     REGISTRY = "registry.json"
+    BENCHMARK_INDEX = "benchmarks/latest.json"
 
     def __init__(self, root: Path = Path("artifacts/models")) -> None:
         self.artifacts = ArtifactStore(root)
@@ -96,3 +97,24 @@ class LocalDeploymentModelStore:
         if sha256(binary).hexdigest() != digest:
             raise ValueError("Deployment model checksum mismatch")
         return joblib.load(BytesIO(binary)), metadata
+
+    def latest_benchmark(self) -> dict[str, object] | None:
+        index_path = self.artifacts.resolve(self.BENCHMARK_INDEX)
+        if not index_path.exists():
+            return None
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        if not isinstance(index, dict):
+            raise ValueError("Invalid deployment benchmark index")
+        relative = index.get("artifact_relative_path")
+        digest = index.get("artifact_sha256")
+        if not isinstance(relative, str) or not isinstance(digest, str):
+            raise ValueError("Incomplete deployment benchmark index")
+        payload = self.artifacts.read_json(relative, digest)
+        metadata = self.metadata()
+        if (
+            not isinstance(payload, dict)
+            or not metadata
+            or payload.get("model_id") != metadata.get("model_id")
+        ):
+            raise ValueError("Benchmark does not belong to the active deployment model")
+        return payload

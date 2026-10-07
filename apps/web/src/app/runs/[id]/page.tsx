@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Alert, Chip, Divider, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from "@mui/material";
 import { FoldGrid } from "@/components/FoldGrid";
 import { api, apiErrorMessage, ApiError } from "@/lib/api/client";
-import type { Experiment, FoldResult, Run, RunDetail, RunSummary, RunVerification } from "@/lib/api/contracts";
+import type { Experiment, FoldResult, Run, RunDetail, RunResources, RunSummary, RunVerification } from "@/lib/api/contracts";
 import { metric, modelLabel, runLabel, selectorLabel, utcTime } from "@/lib/science";
 
 const shortHash = (value: string) => <code title={value}>{value}</code>;
@@ -21,12 +21,13 @@ export default async function RunDetailPage({ params, searchParams }: {
   let detail: RunDetail | null = null;
   let folds: FoldResult[] = [];
   let verification: RunVerification | null = null;
+  let resources: RunResources | null = null;
   let error: string | null = null;
   try {
     run = await api.run(id);
     [experiment, summary] = await Promise.all([api.experiments().then(items => items.find(item => item.id === run!.experiment_id) ?? null), api.runSummary(id)]);
-    if (run.status === "COMPLETED") [detail, folds, verification] = await Promise.all([
-      api.runDetail(id), api.runFolds(id), api.runVerification(id),
+    if (run.status === "COMPLETED") [detail, folds, verification, resources] = await Promise.all([
+      api.runDetail(id), api.runFolds(id), api.runVerification(id), api.runResources(id),
     ]);
   } catch (caught) {
     if (caught instanceof ApiError && caught.status === 404) notFound();
@@ -81,6 +82,18 @@ export default async function RunDetailPage({ params, searchParams }: {
         <h2 id="stability-title" className="section-title">Устойчивость отбора исходных признаков</h2>
         <p className="table-note">Jaccard между fold-наборами: {metric(scientific.feature_stability.pairwise_jaccard_mean)} · описательный, repeated-CV folds зависимы.</p>
         <div className="feature-frequency">{Object.entries(scientific.feature_stability.selection_frequency).filter(([, frequency]) => frequency > 0).sort((a, b) => b[1] - a[1]).map(([name, frequency]) => <div key={name}><span>{name}</span><strong>{metric(frequency, 2)}</strong></div>)}</div>
+      </section>}
+      {resources && <section className="section-surface stack-section" aria-labelledby="resources-title">
+        <h2 id="resources-title" className="section-title">Инженерные измерения</h2>
+        <dl className="metric-list">
+          <div><dt>Nested search, все folds</dt><dd>{metric(resources.total_nested_search_seconds, 2)} с</dd></div>
+          <div><dt>Outer refit, все folds</dt><dd>{metric(resources.total_outer_refit_seconds, 2)} с</dd></div>
+          <div><dt>Latency batch=1, median</dt><dd>{resources.inference_latency_ms.single_row ? `${metric(resources.inference_latency_ms.single_row.median, 3)} мс` : "Не рассчитано"}</dd></div>
+          <div><dt>Latency batch=1000, median</dt><dd>{resources.inference_latency_ms.batch_1000 ? `${metric(resources.inference_latency_ms.batch_1000.median, 3)} мс` : "Не рассчитано"}</dd></div>
+          <div><dt>Pipeline size, median</dt><dd>{resources.serialized_pipeline_bytes ? `${Math.round(resources.serialized_pipeline_bytes.median).toLocaleString("ru-RU")} байт` : "Не рассчитано"}</dd></div>
+          <div><dt>Peak memory</dt><dd>{resources.peak_memory_bytes ? `${Math.round(resources.peak_memory_bytes.median).toLocaleString("ru-RU")} байт` : "Не рассчитано"}</dd></div>
+        </dl>
+        <p className="table-note">{resources.timing_note} {resources.peak_memory_reason}</p>
       </section>}
       {folds.length > 0 && <section className="table-surface stack-section" aria-labelledby="folds-title"><div className="table-heading"><h2 id="folds-title">Outer-fold результаты</h2><span className="table-note">{folds.length} из {scientific?.outer_fold_count} · ссылки открывают fold</span></div><FoldGrid runId={id} folds={folds} /></section>}
       {selected && <section className="section-surface stack-section" aria-labelledby="fold-detail-title">

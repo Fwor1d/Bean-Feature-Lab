@@ -14,6 +14,7 @@ from beanfeature_infrastructure.bootstrap import Container, create_container
 from beanfeature_research.contracts import ModelId
 
 from .schemas import (
+    ClassifierBenchmarkResponse,
     ClassifierExampleResponse,
     CoreSufficiencyResponse,
     CreateExperimentRequest,
@@ -29,6 +30,7 @@ from .schemas import (
     PredictRequest,
     PredictResponse,
     ProjectResponse,
+    RunResourcesResponse,
     RunResponse,
     RunSummaryResponse,
     SystemInfoResponse,
@@ -150,6 +152,13 @@ def create_app(database_url: str | None = None) -> FastAPI:
             return error_response("not_found", "Deployment model is not registered", 404)
         return model
 
+    @application.get("/api/v1/classifier/benchmark", response_model=ClassifierBenchmarkResponse)
+    def classifier_benchmark(service: Service):
+        benchmark = service.classifier_benchmark()
+        if benchmark is None:
+            return error_response("not_found", "Deployment benchmark is not calculated", 404)
+        return ClassifierBenchmarkResponse.model_validate(benchmark)
+
     @application.get("/api/v1/classifier/example", response_model=ClassifierExampleResponse)
     def classifier_example(service: Service) -> ClassifierExampleResponse:
         return ClassifierExampleResponse.model_validate(service.classifier_example())
@@ -213,6 +222,10 @@ def create_app(database_url: str | None = None) -> FastAPI:
     @application.get("/api/v1/runs/{run_id}/verify")
     def verify_run(run_id: int, service: Service):
         return service.verify_run(run_id)
+
+    @application.get("/api/v1/runs/{run_id}/resources", response_model=RunResourcesResponse)
+    def run_resources(run_id: int, service: Service) -> RunResourcesResponse:
+        return RunResourcesResponse.model_validate(service.run_resources(run_id))
 
     @application.get("/api/v1/runs/{run_id}/export/{export_kind}")
     def export_run(

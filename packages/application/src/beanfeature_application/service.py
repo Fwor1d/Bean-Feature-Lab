@@ -150,6 +150,9 @@ class ApplicationService:
     def classifier_info(self) -> dict[str, object] | None:
         return self.deployment_models.metadata() if self.deployment_models else None
 
+    def classifier_benchmark(self) -> dict[str, object] | None:
+        return self.deployment_models.latest_benchmark() if self.deployment_models else None
+
     def classifier_example(self) -> dict[str, object]:
         if not self.dataset_store:
             raise RuntimeError("Dataset infrastructure is unavailable")
@@ -744,6 +747,59 @@ class ApplicationService:
             "text/csv; charset=utf-8",
             output.getvalue().encode(),
         )
+
+    def run_resources(self, run_id: int) -> dict[str, object]:
+        """Aggregate recorded full-pipeline engineering measurements without inventing values."""
+        payload = self.get_run_result(run_id)
+        if payload is None:
+            raise ConflictError("Scientific result is not available")
+        folds = payload["folds"]
+
+        def distribution(values: list[float]) -> dict[str, float | int] | None:
+            if not values:
+                return None
+            series = pd.Series(values, dtype=float)
+            return {
+                "samples": len(values),
+                "median": float(series.median()),
+                "p95": float(series.quantile(0.95)),
+                "minimum": float(series.min()),
+                "maximum": float(series.max()),
+            }
+
+        latency: dict[str, object] = {}
+        for key in ("single_row", "batch_1000"):
+            samples = [
+                float(value)
+                for fold in folds
+                for value in (fold.get("inference_latency", {}).get(key, {}).get("samples_ms", []))
+            ]
+            latency[key] = distribution(samples)
+        peak_values = [
+            int(fold["peak_memory_bytes"])
+            for fold in folds
+            if fold.get("peak_memory_bytes") is not None
+        ]
+        return {
+            "run_id": payload["run_id"],
+            "measurement_scope": "outer-fold full preprocessing-and-model pipelines",
+            "total_nested_search_seconds": sum(float(fold["search_seconds"]) for fold in folds),
+            "total_outer_refit_seconds": sum(float(fold["refit_seconds"]) for fold in folds),
+            "inference_latency_ms": latency,
+            "serialized_pipeline_bytes": distribution(
+                [float(fold["serialized_pipeline_bytes"]) for fold in folds]
+            ),
+            "peak_memory_bytes": distribution([float(value) for value in peak_values]),
+            "peak_memory_status": "CALCULATED" if peak_values else "NOT_CALCULATED",
+            "peak_memory_reason": None
+            if peak_values
+            else "No reliable isolated process-tree RSS measurement was recorded for this run.",
+            "software_hardware_profile": payload["provenance"],
+            "timing_note": (
+                "Latency includes the full fitted preprocessing pipeline, uses fold-local warm-up, "
+                "and is an engineering benchmark rather than a scientific performance metric."
+            ),
+        }
 
     def feature_budget_series(self) -> list[dict[str, object]]:
         points = []

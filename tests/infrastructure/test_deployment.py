@@ -25,6 +25,13 @@ def test_versioned_deployment_registry_roundtrip(tmp_path) -> None:
     registry = json.loads((tmp_path / "registry.json").read_text())
     assert registry["active_model_id"] == "test-model-v1"
     assert list(registry["models"]) == ["test-model-v1"]
+    benchmark = {"model_id": "test-model-v1", "status": "CALCULATED"}
+    digest = store.artifacts.write_json("benchmarks/test.json", benchmark)
+    store.artifacts.write_json(
+        store.BENCHMARK_INDEX,
+        {"artifact_relative_path": "benchmarks/test.json", "artifact_sha256": digest},
+    )
+    assert store.latest_benchmark() == benchmark
 
 
 def test_deployment_registry_rejects_unsafe_id_and_tampering(tmp_path) -> None:

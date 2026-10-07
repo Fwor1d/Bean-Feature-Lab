@@ -1,6 +1,6 @@
 import type {
-  ClassifierExample, ClassifierModel, ClassifierPrediction, CoreSufficiency, Dataset, DatasetManifest, DatasetQuality, Experiment, FeatureBudgetPoint, FeatureSelectionPoint, FoldResult, PairedComparison,
-  Project, Run, RunDetail, RunSummary, RunVerification, SystemInfo,
+  ClassifierBenchmark, ClassifierExample, ClassifierModel, ClassifierPrediction, CoreSufficiency, Dataset, DatasetManifest, DatasetQuality, Experiment, FeatureBudgetPoint, FeatureSelectionPoint, FoldResult, PairedComparison,
+  Project, Run, RunDetail, RunResources, RunSummary, RunVerification, SystemInfo,
 } from "./contracts";
 
 export class ApiError extends Error {
@@ -36,6 +36,7 @@ export const api = {
   datasetManifest: (id: number) => request<DatasetManifest>(`/api/v1/datasets/${id}/manifest`),
   datasetQuality: (id: number) => request<DatasetQuality>(`/api/v1/datasets/${id}/quality`),
   classifierModel: () => request<ClassifierModel>("/api/v1/classifier/model"),
+  classifierBenchmark: () => request<ClassifierBenchmark>("/api/v1/classifier/benchmark"),
   classifierExample: () => request<ClassifierExample>("/api/v1/classifier/example"),
   predict: (features: Record<string, number>) => request<ClassifierPrediction>("/api/v1/classifier/predict", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ features }),
@@ -44,6 +45,7 @@ export const api = {
   runSummary: (id: number) => request<RunSummary>(`/api/v1/runs/${id}/summary`),
   runDetail: (id: number) => request<RunDetail>(`/api/v1/runs/${id}/detail`),
   runVerification: (id: number) => request<RunVerification>(`/api/v1/runs/${id}/verify`),
+  runResources: (id: number) => request<RunResources>(`/api/v1/runs/${id}/resources`),
   runFolds: (id: number) => request<FoldResult[]>(`/api/v1/runs/${id}/folds`),
   featureBudgetSeries: () => request<FeatureBudgetPoint[]>("/api/v1/feature-budget/series"),
   featureSelectionSeries: () => request<FeatureSelectionPoint[]>("/api/v1/features/selection-series"),

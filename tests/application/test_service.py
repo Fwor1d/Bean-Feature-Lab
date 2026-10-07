@@ -148,6 +148,12 @@ def test_synthetic_end_to_end_persistence_roundtrip(tmp_path) -> None:
     assert config_filename == f"{queued.display_id}-config.json"
     assert config_type == "application/json"
     assert json.loads(config_content)["run_id"] == queued.display_id
+    resources = service.run_resources(queued.id)
+    assert resources["total_nested_search_seconds"] > 0
+    assert resources["inference_latency_ms"]["single_row"]["samples"] == 6
+    assert resources["serialized_pipeline_bytes"]["median"] > 0
+    assert resources["peak_memory_status"] == "NOT_CALCULATED"
+    assert resources["peak_memory_bytes"] is None
     reproduced = service.reproduce_run(queued.id)
     assert reproduced.status.value == "QUEUED"
     reproduced_config = service.get_experiment(reproduced.experiment_id).configuration
