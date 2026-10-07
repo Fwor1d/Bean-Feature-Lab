@@ -24,6 +24,7 @@ from beanfeature_research.engine import (
     EngineCondition,
     NestedResult,
     build_pipeline,
+    descriptive_paired_comparison,
     paired_comparison,
     preset_search_space,
     run_nested_cv,
@@ -1206,6 +1207,33 @@ class ApplicationService:
         path = f"{compact_run.display_id}/paired-vs-{baseline_run.display_id}.json"
         digest = self.artifacts.write_json(path, payload)
         return {**payload, "artifact_relative_path": path, "artifact_sha256": digest}
+
+    def compare_runs_descriptively(self, left_run_id: int, right_run_id: int) -> dict[str, object]:
+        """Describe two completed conditions evaluated on the same frozen outer folds."""
+        if left_run_id == right_run_id:
+            raise ValueError("Choose two different runs")
+        left_run = self.get_run(left_run_id)
+        right_run = self.get_run(right_run_id)
+        if left_run.dataset_hash != right_run.dataset_hash or not left_run.dataset_hash:
+            raise ValueError("Paired runs require the same validated dataset hash")
+        left_payload = self.get_run_result(left_run_id)
+        right_payload = self.get_run_result(right_run_id)
+        if not left_payload or not right_payload:
+            raise ConflictError("Both runs must be completed before paired comparison")
+        left = NestedResult(left_payload["folds"], left_payload["summary"], left_payload["splits"])
+        right = NestedResult(
+            right_payload["folds"], right_payload["summary"], right_payload["splits"]
+        )
+        return {
+            "left_run_id": left_run.display_id,
+            "right_run_id": right_run.display_id,
+            "dataset_hash": left_run.dataset_hash,
+            "left_summary": left_payload["summary"],
+            "right_summary": right_payload["summary"],
+            "left_resources": self.run_resources(left_run_id),
+            "right_resources": self.run_resources(right_run_id),
+            "comparison": descriptive_paired_comparison(left, right),
+        }
 
     def core_sufficiency(self, model: ModelId, *, persist: bool = False) -> dict[str, object]:
         """Evaluate all available Core MI k values against the matching no-selector baseline."""

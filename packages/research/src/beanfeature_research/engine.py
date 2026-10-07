@@ -579,3 +579,51 @@ def paired_comparison(compact: NestedResult, baseline: NestedResult) -> dict[str
         "sufficient_k": compact.summary["k_original_features"] if sufficient else None,
         "status": "CALCULATED",
     }
+
+
+def descriptive_paired_comparison(left: NestedResult, right: NestedResult) -> dict[str, object]:
+    """Describe two full-protocol conditions on the same frozen outer folds.
+
+    This deliberately performs no model-selection test and makes no sufficiency decision.
+    It is suitable for model/selector exploration, not for declaring a winner.
+    """
+    if (
+        left.summary["evaluation_mode"] != "protocol"
+        or right.summary["evaluation_mode"] != "protocol"
+    ):
+        raise ValueError("Smoke results cannot support a scientific run comparison")
+    if len(left.folds) != 15 or len(right.folds) != 15:
+        raise ValueError("Descriptive paired comparison requires 15 outer folds per run")
+    fold_differences: list[dict[str, object]] = []
+    for left_fold, right_fold in zip(left.folds, right.folds, strict=True):
+        if (left_fold["fold_id"], left_fold["split_sha256"]) != (
+            right_fold["fold_id"],
+            right_fold["split_sha256"],
+        ):
+            raise ValueError("Outer folds differ; paired comparison is invalid")
+        fold_differences.append(
+            {
+                "fold_id": left_fold["fold_id"],
+                "macro_f1_difference_left_minus_right": float(left_fold["macro_f1"])
+                - float(right_fold["macro_f1"]),
+                "accuracy_difference_left_minus_right": float(left_fold["accuracy"])
+                - float(right_fold["accuracy"]),
+            }
+        )
+    return {
+        "status": "CALCULATED",
+        "comparison_kind": "descriptive-paired-outer-fold-differences-v1",
+        "n_paired_folds": len(fold_differences),
+        "fold_differences": fold_differences,
+        "mean_macro_f1_difference_left_minus_right": mean(
+            float(item["macro_f1_difference_left_minus_right"]) for item in fold_differences
+        ),
+        "mean_accuracy_difference_left_minus_right": mean(
+            float(item["accuracy_difference_left_minus_right"]) for item in fold_differences
+        ),
+        "decision": None,
+        "note": (
+            "Paired fold differences are descriptive. No winner, sufficient-k decision, "
+            "or multiplicity-adjusted inferential claim is made."
+        ),
+    }

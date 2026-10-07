@@ -261,6 +261,10 @@ def create_app(database_url: str | None = None) -> FastAPI:
     def run_paired_comparison(run_id: int, baseline_run_id: int, service: Service):
         return service.compare_runs(run_id, baseline_run_id)
 
+    @application.get("/api/v1/runs/{left_run_id}/descriptive-comparison/{right_run_id}")
+    def run_descriptive_comparison(left_run_id: int, right_run_id: int, service: Service):
+        return service.compare_runs_descriptively(left_run_id, right_run_id)
+
     @application.get(
         "/api/v1/feature-budget/series", response_model=list[FeatureBudgetPointResponse]
     )

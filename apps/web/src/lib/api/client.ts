@@ -1,5 +1,5 @@
 import type {
-  ClassifierBenchmark, ClassifierExample, ClassifierModel, ClassifierPrediction, CoreSufficiency, Dataset, DatasetManifest, DatasetQuality, Experiment, FeatureBudgetPoint, FeatureSelectionPoint, FoldResult, PairedComparison,
+  ClassifierBenchmark, ClassifierExample, ClassifierModel, ClassifierPrediction, CoreSufficiency, Dataset, DatasetManifest, DatasetQuality, DescriptiveComparison, Experiment, FeatureBudgetPoint, FeatureSelectionPoint, FoldResult, PairedComparison,
   Project, Run, RunDetail, RunResources, RunSummary, RunVerification, SystemInfo,
 } from "./contracts";
 
@@ -52,6 +52,8 @@ export const api = {
   coreSufficiency: () => request<CoreSufficiency[]>("/api/v1/core/sufficiency"),
   pairedComparison: (compact: number, baseline: number) =>
     request<PairedComparison>(`/api/v1/runs/${compact}/paired-comparison/${baseline}`),
+  descriptiveComparison: (left: number, right: number) =>
+    request<DescriptiveComparison>(`/api/v1/runs/${left}/descriptive-comparison/${right}`),
   createExperiment: (body: { name: string; configuration: Experiment["configuration"] }) =>
     request<Experiment>("/api/v1/experiments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   createRun: (experimentId: number) => request<Run>(`/api/v1/experiments/${experimentId}/runs`, { method: "POST" }),

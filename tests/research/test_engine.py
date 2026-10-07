@@ -12,6 +12,7 @@ from beanfeature_research.engine import (
     EngineCondition,
     NestedResult,
     build_pipeline,
+    descriptive_paired_comparison,
     outer_splits,
     paired_comparison,
     preset_search_space,
@@ -174,6 +175,34 @@ def test_sufficiency_rejects_fold_mismatch_and_k16_candidate() -> None:
     full, reference = _paired_fixture([0.001] * 15, compact_k=16)
     with pytest.raises(ValueError, match="fewer than 16"):
         paired_comparison(full, reference)
+
+
+def test_descriptive_paired_comparison_is_deterministic_and_non_inferential() -> None:
+    left, right = _paired_fixture([0.01] * 15)
+    for fold in left.folds:
+        fold["accuracy"] = 0.79
+    for fold in right.folds:
+        fold["accuracy"] = 0.80
+    first = descriptive_paired_comparison(left, right)
+    second = descriptive_paired_comparison(left, right)
+    assert first == second
+    assert first["mean_macro_f1_difference_left_minus_right"] == pytest.approx(-0.01)
+    assert first["mean_accuracy_difference_left_minus_right"] == pytest.approx(-0.01)
+    assert first["decision"] is None
+    assert "No winner" in first["note"]
+
+
+def test_descriptive_paired_comparison_rejects_unpaired_or_smoke_results() -> None:
+    left, right = _paired_fixture([0.01] * 15)
+    right.folds[0]["split_sha256"] = "different"
+    for result in (left, right):
+        for fold in result.folds:
+            fold["accuracy"] = 0.8
+    with pytest.raises(ValueError, match="Outer folds differ"):
+        descriptive_paired_comparison(left, right)
+    left.summary["evaluation_mode"] = "smoke"
+    with pytest.raises(ValueError, match="Smoke results"):
+        descriptive_paired_comparison(left, right)
 
 
 @pytest.mark.parametrize(

@@ -205,7 +205,7 @@ export interface ScientificSummary {
   selector: SelectorId;
   seed: number;
   outer_split_set_sha256: string;
-  budget_kind: "original_features" | "pca_components";
+  budget_kind: "original_features" | "pca_components" | "sparse_original_features";
   k_original_features: number | null;
   n_components: number | null;
   outer_fold_count: number;
@@ -363,6 +363,30 @@ export interface PairedComparison {
     decision: "sufficient" | "not_sufficient";
     sufficient_k: number | null;
     status: string;
+  };
+}
+
+export interface DescriptiveComparison {
+  left_run_id: string;
+  right_run_id: string;
+  dataset_hash: string;
+  left_summary: ScientificSummary;
+  right_summary: ScientificSummary;
+  left_resources: RunResources;
+  right_resources: RunResources;
+  comparison: {
+    status: "CALCULATED";
+    comparison_kind: string;
+    n_paired_folds: number;
+    fold_differences: {
+      fold_id: string;
+      macro_f1_difference_left_minus_right: number;
+      accuracy_difference_left_minus_right: number;
+    }[];
+    mean_macro_f1_difference_left_minus_right: number;
+    mean_accuracy_difference_left_minus_right: number;
+    decision: null;
+    note: string;
   };
 }
 
