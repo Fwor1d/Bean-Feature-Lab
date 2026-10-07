@@ -19,6 +19,7 @@ class ExperimentConfig:
     evaluation_mode: Literal["protocol", "smoke"] = "protocol"
     search_space: dict[str, list[object]] = field(default_factory=dict)
     reproduces_run_id: str | None = None
+    selector_configuration: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

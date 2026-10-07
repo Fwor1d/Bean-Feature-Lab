@@ -30,7 +30,7 @@ from sklearn.model_selection import GridSearchCV, RepeatedStratifiedKFold, Strat
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.svm import SVC
+from sklearn.svm import SVC, LinearSVC
 
 from .contracts import ModelId, OriginalFeatureBudget, PCARepresentation, SelectorId
 from .dataset import TARGET
@@ -96,6 +96,7 @@ class EngineCondition:
     seed: int
     search_space: dict[str, list[object]]
     evaluation_mode: Literal["protocol", "smoke"] = "protocol"
+    selector_configuration: dict[str, object] | None = None
 
     def __post_init__(self) -> None:
         if self.evaluation_mode not in ("protocol", "smoke"):
@@ -114,6 +115,60 @@ class EngineCondition:
                 raise ValueError("No-selector baseline requires all 16 original features")
         if not self.search_space or any(not values for values in self.search_space.values()):
             raise ValueError("A frozen, nonempty hyperparameter search space is required")
+
+
+def _rfe_estimator(model: ModelId, seed: int) -> tuple[BaseEstimator, str]:
+    if model is ModelId.LOGISTIC_REGRESSION:
+        return LogisticRegression(max_iter=800, random_state=seed), "logistic_regression"
+    if model is ModelId.SVM_RBF:
+        return LinearSVC(C=1.0, dual="auto", max_iter=5000, random_state=seed), "linear_svm"
+    raise ValueError("Core RFE supports only Logistic Regression and SVM RBF")
+
+
+def _tree_ranking_estimator(model: ModelId, seed: int) -> tuple[BaseEstimator, str]:
+    if model is ModelId.RANDOM_FOREST:
+        return (
+            RandomForestClassifier(n_estimators=80, n_jobs=1, random_state=seed),
+            "random_forest",
+        )
+    if model is ModelId.XGBOOST:
+        from xgboost import XGBClassifier
+
+        return (
+            XGBClassifier(
+                n_estimators=80,
+                learning_rate=0.1,
+                max_depth=3,
+                tree_method="hist",
+                n_jobs=1,
+                eval_metric="mlogloss",
+                random_state=seed,
+            ),
+            "xgboost",
+        )
+    if model is ModelId.LIGHTGBM:
+        from lightgbm import LGBMClassifier
+
+        return (
+            LGBMClassifier(
+                n_estimators=80,
+                learning_rate=0.1,
+                num_leaves=31,
+                verbosity=-1,
+                n_jobs=1,
+                random_state=seed,
+            ),
+            "lightgbm",
+        )
+    raise ValueError("Core tree importance requires RF, XGBoost, or LightGBM")
+
+
+def _require_selector_estimator(condition: EngineCondition, expected: str) -> None:
+    configured = (condition.selector_configuration or {}).get("estimator")
+    if configured is not None and configured != expected:
+        raise ValueError(
+            f"Selector estimator {configured!r} conflicts with the frozen {expected!r} branch"
+        )
 
 
 @dataclass(frozen=True)
@@ -187,12 +242,16 @@ def build_pipeline(condition: EngineCondition) -> Pipeline:
     elif condition.selector is SelectorId.ANOVA:
         selector = SelectKBest(f_classif, k=k)
     elif condition.selector is SelectorId.RFE:
-        selector = RFE(LogisticRegression(max_iter=800, random_state=seed), n_features_to_select=k)
+        ranking_estimator, estimator_id = _rfe_estimator(condition.model, seed)
+        _require_selector_estimator(condition, estimator_id)
+        selector = RFE(ranking_estimator, n_features_to_select=k, step=1)
     elif condition.selector is SelectorId.L1_LOGISTIC:
         selector = L1TopK(k=k or 0, seed=seed)
     elif condition.selector is SelectorId.TREE_IMPORTANCE:
+        ranking_estimator, estimator_id = _tree_ranking_estimator(condition.model, seed)
+        _require_selector_estimator(condition, estimator_id)
         selector = SelectFromModel(
-            RandomForestClassifier(n_estimators=80, n_jobs=1, random_state=seed),
+            ranking_estimator,
             threshold=-np.inf,
             max_features=k,
         )
@@ -392,6 +451,7 @@ def run_nested_cv(
         "search_space": condition.search_space,
         "model": condition.model.value,
         "selector": condition.selector.value,
+        "selector_configuration": condition.selector_configuration or {},
         "seed": condition.seed,
         "outer_split_set_sha256": sha256(
             "".join(str(fold["split_sha256"]) for fold in folds).encode()
@@ -416,7 +476,7 @@ def run_nested_cv(
         ),
         "feature_stability": stability,
         "sufficient_k": None,
-        "sufficiency_status": "NOT_ASSESSED_INTERVAL_METHOD_UNAPPROVED",
+        "sufficiency_status": "NOT_CALCULATED_SEPARATE_PAIRED_ANALYSIS_REQUIRED",
         "sufficiency_margin_macro_f1": 0.01,
     }
     return NestedResult(folds, summary, manifests)

@@ -53,6 +53,52 @@ def test_pca_cannot_be_original_budget(tmp_path) -> None:
         )
 
 
+def test_core_selector_compatibility_is_validated_and_normalized(tmp_path) -> None:
+    container = create_container(f"sqlite:///{tmp_path / 'test.sqlite'}")
+    Base.metadata.create_all(container.metadata.engine)
+    service: ApplicationService = container.service
+    with pytest.raises(ValueError, match="Core RFE supports"):
+        service.create_experiment(
+            "invalid RFE",
+            ExperimentConfig(
+                ModelId.RANDOM_FOREST,
+                SelectorId.RFE,
+                "original_features",
+                k_original_features=4,
+            ),
+        )
+    with pytest.raises(ValueError, match="frozen k points"):
+        service.create_experiment(
+            "invalid ANOVA point",
+            ExperimentConfig(
+                ModelId.SVM_RBF,
+                SelectorId.ANOVA,
+                "original_features",
+                k_original_features=3,
+            ),
+        )
+    with pytest.raises(ValueError, match="variable-sparsity"):
+        service.create_experiment(
+            "invalid fixed-k L1",
+            ExperimentConfig(
+                ModelId.LOGISTIC_REGRESSION,
+                SelectorId.L1_LOGISTIC,
+                "original_features",
+                k_original_features=4,
+            ),
+        )
+    experiment = service.create_experiment(
+        "frozen SVM RFE",
+        ExperimentConfig(
+            ModelId.SVM_RBF,
+            SelectorId.RFE,
+            "original_features",
+            k_original_features=4,
+        ),
+    )
+    assert experiment.configuration.selector_configuration == {"estimator": "linear_svm"}
+
+
 def test_completed_requires_verified_artifact_and_failure_has_no_metrics(tmp_path) -> None:
     container = create_container(f"sqlite:///{tmp_path / 'test.sqlite'}")
     Base.metadata.create_all(container.metadata.engine)

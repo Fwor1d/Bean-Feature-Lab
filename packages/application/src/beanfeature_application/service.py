@@ -247,12 +247,66 @@ class ApplicationService:
             SelectorId.SEQUENTIAL_FEATURE_SELECTION,
         ):
             raise ValueError("Extended selector is not implemented in Core")
+        selector_configuration = dict(configuration.selector_configuration)
+        control_points = {1, 2, 4, 8, 12, 16}
+        if configuration.selector is SelectorId.MUTUAL_INFORMATION:
+            if configuration.model is ModelId.MLP:
+                raise ValueError("MLP is a Core baseline only; its full MI curve is Extended")
+        elif configuration.selector is SelectorId.ANOVA:
+            if configuration.model not in (
+                ModelId.SVM_RBF,
+                ModelId.RANDOM_FOREST,
+                ModelId.XGBOOST,
+            ):
+                raise ValueError("Core ANOVA supports SVM RBF, Random Forest, and XGBoost")
+            if configuration.k_original_features not in control_points:
+                raise ValueError("Core ANOVA uses frozen k points: 1, 2, 4, 8, 12, 16")
+        elif configuration.selector is SelectorId.RFE:
+            estimators = {
+                ModelId.LOGISTIC_REGRESSION: "logistic_regression",
+                ModelId.SVM_RBF: "linear_svm",
+            }
+            expected = estimators.get(configuration.model)
+            if expected is None:
+                raise ValueError("Core RFE supports Logistic Regression and SVM RBF")
+            if configuration.k_original_features not in control_points:
+                raise ValueError("Core RFE uses frozen k points: 1, 2, 4, 8, 12, 16")
+            if selector_configuration and selector_configuration != {"estimator": expected}:
+                raise ValueError("RFE selector estimator differs from frozen Core protocol")
+            selector_configuration = {"estimator": expected}
+        elif configuration.selector is SelectorId.TREE_IMPORTANCE:
+            estimators = {
+                ModelId.RANDOM_FOREST: "random_forest",
+                ModelId.XGBOOST: "xgboost",
+                ModelId.LIGHTGBM: "lightgbm",
+            }
+            expected = estimators.get(configuration.model)
+            if expected is None:
+                raise ValueError("Core tree importance supports RF, XGBoost, and LightGBM")
+            if configuration.k_original_features not in control_points:
+                raise ValueError("Core tree importance uses frozen k points: 1, 2, 4, 8, 12, 16")
+            if selector_configuration and selector_configuration != {"estimator": expected}:
+                raise ValueError("Tree ranking estimator differs from frozen Core protocol")
+            selector_configuration = {"estimator": expected}
+        elif configuration.selector is SelectorId.PCA:
+            if configuration.model not in (ModelId.LOGISTIC_REGRESSION, ModelId.SVM_RBF):
+                raise ValueError("Core PCA supports Logistic Regression and SVM RBF")
+        elif configuration.selector is SelectorId.L1_LOGISTIC:
+            raise ValueError(
+                "Core L1 is a variable-sparsity path and is not accepted as a fixed-k condition"
+            )
+        elif selector_configuration:
+            raise ValueError("This selector does not accept selector_configuration")
         frozen_space = preset_search_space(
             configuration.model, smoke=configuration.evaluation_mode == "smoke"
         )
         if configuration.search_space and configuration.search_space != frozen_space:
             raise ValueError("Search space differs from predeclared small-grid-v1 preset")
-        configuration = replace(configuration, search_space=frozen_space)
+        configuration = replace(
+            configuration,
+            search_space=frozen_space,
+            selector_configuration=selector_configuration,
+        )
         if self.datasets and configuration.dataset_version is None:
             registered = self.datasets.list()
             if len(registered) == 1:
@@ -440,6 +494,7 @@ class ApplicationService:
                 seed=config.seed,
                 search_space=config.search_space,
                 evaluation_mode=config.evaluation_mode,
+                selector_configuration=config.selector_configuration,
             )
             provenance = self.metadata.provenance()
             canonical = json.dumps(

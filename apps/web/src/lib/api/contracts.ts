@@ -15,6 +15,7 @@ export interface ExperimentConfig {
   evaluation_mode?: "protocol" | "smoke";
   search_space?: Record<string, unknown[]>;
   reproduces_run_id?: string | null;
+  selector_configuration?: Record<string, unknown>;
 }
 
 export interface Experiment {

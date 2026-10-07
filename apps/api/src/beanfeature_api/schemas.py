@@ -166,6 +166,7 @@ class ExperimentConfigDTO(BaseModel):
     evaluation_mode: Literal["protocol", "smoke"] = "protocol"
     search_space: dict[str, list[object]] = Field(default_factory=dict)
     reproduces_run_id: str | None = Field(default=None, pattern=r"^RUN-\d{6}$")
+    selector_configuration: dict[str, object] = Field(default_factory=dict)
 
     def to_domain(self) -> ExperimentConfig:
         return ExperimentConfig(**self.model_dump())

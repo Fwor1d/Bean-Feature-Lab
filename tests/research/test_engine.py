@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from sklearn.datasets import make_classification
-from sklearn.feature_selection import SelectKBest
+from sklearn.feature_selection import RFE, SelectFromModel, SelectKBest
 from sklearn.pipeline import Pipeline
 
 from beanfeature_research.contracts import ModelId, SelectorId
@@ -177,26 +177,27 @@ def test_sufficiency_rejects_fold_mismatch_and_k16_candidate() -> None:
 
 
 @pytest.mark.parametrize(
-    "selector",
+    ("selector", "model"),
     [
-        SelectorId.MUTUAL_INFORMATION,
-        SelectorId.ANOVA,
-        SelectorId.RFE,
-        SelectorId.L1_LOGISTIC,
-        SelectorId.TREE_IMPORTANCE,
-        SelectorId.PCA,
+        (SelectorId.MUTUAL_INFORMATION, ModelId.LOGISTIC_REGRESSION),
+        (SelectorId.ANOVA, ModelId.SVM_RBF),
+        (SelectorId.RFE, ModelId.LOGISTIC_REGRESSION),
+        (SelectorId.TREE_IMPORTANCE, ModelId.RANDOM_FOREST),
+        (SelectorId.PCA, ModelId.LOGISTIC_REGRESSION),
     ],
 )
-def test_core_selector_pipeline_contract(selector: SelectorId, synthetic_classification) -> None:
+def test_core_selector_pipeline_contract(
+    selector: SelectorId, model: ModelId, synthetic_classification
+) -> None:
     pca = selector is SelectorId.PCA
     selected = EngineCondition(
-        ModelId.LOGISTIC_REGRESSION,
+        model,
         selector,
         "pca_components" if pca else "original_features",
         None if pca else 4,
         4 if pca else None,
         42,
-        preset_search_space(ModelId.LOGISTIC_REGRESSION, smoke=True),
+        preset_search_space(model, smoke=True),
         "smoke",
     )
     pipeline = build_pipeline(selected)
@@ -205,6 +206,52 @@ def test_core_selector_pipeline_contract(selector: SelectorId, synthetic_classif
     pipeline.fit(features.iloc[:112], target[:112])
     transformed = pipeline[:-1].transform(features.iloc[112:])
     assert transformed.shape == (28, 4)
+
+
+def test_rfe_and_tree_ranking_estimators_follow_frozen_model_branch() -> None:
+    svm_rfe = EngineCondition(
+        ModelId.SVM_RBF,
+        SelectorId.RFE,
+        "original_features",
+        4,
+        None,
+        42,
+        preset_search_space(ModelId.SVM_RBF, smoke=True),
+        "smoke",
+        {"estimator": "linear_svm"},
+    )
+    rfe = build_pipeline(svm_rfe).named_steps["select"]
+    assert isinstance(rfe, RFE)
+    assert rfe.estimator.__class__.__name__ == "LinearSVC"
+
+    xgb_tree = EngineCondition(
+        ModelId.XGBOOST,
+        SelectorId.TREE_IMPORTANCE,
+        "original_features",
+        4,
+        None,
+        42,
+        preset_search_space(ModelId.XGBOOST, smoke=True),
+        "smoke",
+        {"estimator": "xgboost"},
+    )
+    tree = build_pipeline(xgb_tree).named_steps["select"]
+    assert isinstance(tree, SelectFromModel)
+    assert tree.estimator.__class__.__name__ == "XGBClassifier"
+
+    wrong = EngineCondition(
+        ModelId.SVM_RBF,
+        SelectorId.RFE,
+        "original_features",
+        4,
+        None,
+        42,
+        preset_search_space(ModelId.SVM_RBF, smoke=True),
+        "smoke",
+        {"estimator": "logistic_regression"},
+    )
+    with pytest.raises(ValueError, match="conflicts"):
+        build_pipeline(wrong)
 
 
 @pytest.mark.parametrize("model", list(ModelId))
