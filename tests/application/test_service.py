@@ -1,3 +1,5 @@
+import json
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pandas as pd
@@ -135,6 +137,23 @@ def test_synthetic_end_to_end_persistence_roundtrip(tmp_path) -> None:
     result = service.get_run_result(queued.id)
     assert result and len(result["folds"]) == 2
     assert result["summary"]["macro_f1_mean"] == completed.summary["macro_f1_mean"]
+    verification = service.verify_run(queued.id)
+    assert verification["verified"] is True
+    assert all(verification["checks"].values())
+    filename, media_type, content = service.export_run(queued.id, "folds.csv")
+    assert filename == f"{queued.display_id}-folds.csv"
+    assert media_type.startswith("text/csv")
+    assert content.decode().splitlines()[0].startswith("fold_id,split_sha256")
+    config_filename, config_type, config_content = service.export_run(queued.id, "config.json")
+    assert config_filename == f"{queued.display_id}-config.json"
+    assert config_type == "application/json"
+    assert json.loads(config_content)["run_id"] == queued.display_id
+    reproduced = service.reproduce_run(queued.id)
+    assert reproduced.status.value == "QUEUED"
+    reproduced_config = service.get_experiment(reproduced.experiment_id).configuration
+    assert reproduced_config == replace(
+        experiment.configuration, reproduces_run_id=queued.display_id
+    )
 
 
 def test_core_enqueue_is_idempotent_and_missing_baseline_is_not_calculated(tmp_path) -> None:

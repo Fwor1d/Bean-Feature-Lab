@@ -1,12 +1,12 @@
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.exc import SQLAlchemyError
 
 from beanfeature_application.service import ApplicationService, ConflictError, NotFoundError
@@ -200,6 +200,23 @@ def create_app(database_url: str | None = None) -> FastAPI:
         if result is None:
             return error_response("not_calculated", "Scientific result is not available", 409)
         return result
+
+    @application.get("/api/v1/runs/{run_id}/verify")
+    def verify_run(run_id: int, service: Service):
+        return service.verify_run(run_id)
+
+    @application.get("/api/v1/runs/{run_id}/export/{export_kind}")
+    def export_run(
+        run_id: int,
+        export_kind: Literal["result.json", "config.json", "folds.csv", "selected-features.csv"],
+        service: Service,
+    ) -> Response:
+        filename, media_type, content = service.export_run(run_id, export_kind)
+        return Response(
+            content,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     @application.get("/api/v1/runs/{run_id}/folds", response_model=list[FoldResultResponse])
     def run_folds(run_id: int, service: Service):

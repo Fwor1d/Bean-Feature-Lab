@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Alert, Chip, Divider, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from "@mui/material";
 import { FoldGrid } from "@/components/FoldGrid";
 import { api, apiErrorMessage, ApiError } from "@/lib/api/client";
-import type { Experiment, FoldResult, Run, RunDetail, RunSummary } from "@/lib/api/contracts";
+import type { Experiment, FoldResult, Run, RunDetail, RunSummary, RunVerification } from "@/lib/api/contracts";
 import { metric, modelLabel, runLabel, selectorLabel, utcTime } from "@/lib/science";
 
 const shortHash = (value: string) => <code title={value}>{value}</code>;
@@ -20,11 +20,14 @@ export default async function RunDetailPage({ params, searchParams }: {
   let summary: RunSummary | null = null;
   let detail: RunDetail | null = null;
   let folds: FoldResult[] = [];
+  let verification: RunVerification | null = null;
   let error: string | null = null;
   try {
     run = await api.run(id);
     [experiment, summary] = await Promise.all([api.experiments().then(items => items.find(item => item.id === run!.experiment_id) ?? null), api.runSummary(id)]);
-    if (run.status === "COMPLETED") [detail, folds] = await Promise.all([api.runDetail(id), api.runFolds(id)]);
+    if (run.status === "COMPLETED") [detail, folds, verification] = await Promise.all([
+      api.runDetail(id), api.runFolds(id), api.runVerification(id),
+    ]);
   } catch (caught) {
     if (caught instanceof ApiError && caught.status === 404) notFound();
     error = apiErrorMessage(caught);
@@ -54,6 +57,7 @@ export default async function RunDetailPage({ params, searchParams }: {
       </section>
       {detail && <section className="section-surface stack-section" aria-labelledby="provenance-title">
         <h2 id="provenance-title" className="section-title">Конфигурация и происхождение</h2>
+        {verification && <div className="status-line" style={{ marginBottom: 16 }}><Chip label={verification.verified ? "Artifact и run верифицированы" : "Верификация не пройдена"} color={verification.verified ? "success" : "error"} size="small" variant="outlined" /><span>{Object.values(verification.checks).filter(Boolean).length}/{Object.keys(verification.checks).length} проверок</span></div>}
         <dl className="detail-list">
           <div><dt>Бюджет</dt><dd>{config?.budget_kind === "pca_components" ? `${config.n_components} компонент PCA · нужны 16 исходных признаков` : `${config?.k_original_features} исходных признаков`}</dd></div>
           <div><dt>Dataset</dt><dd>{detail.dataset_manifest.source} · ID {detail.dataset_manifest.source_id} · {detail.dataset_manifest.dataset_version}</dd></div>
@@ -64,6 +68,13 @@ export default async function RunDetailPage({ params, searchParams }: {
           <div><dt>Environment</dt><dd>Python {detail.provenance.python_version} · {detail.provenance.platform}</dd></div>
           <div><dt>Artifact</dt><dd>{detail.artifact_verified ? "SHA-256 проверен" : "Не подтверждён"} · {detail.result_artifact}<br />{shortHash(detail.result_sha256)}</dd></div>
         </dl>
+        {verification?.errors.length ? <Alert severity="error" sx={{ mt: 2 }}>{verification.errors.join(" · ")}</Alert> : null}
+        {verification?.verified && <div className="action-row" aria-label="Экспорт запуска">
+          <a href={`/api/backend/api/v1/runs/${id}/export/result.json`} download>Результат JSON</a>
+          <a href={`/api/backend/api/v1/runs/${id}/export/config.json`} download>Снимок config</a>
+          <a href={`/api/backend/api/v1/runs/${id}/export/folds.csv`} download>Folds CSV</a>
+          {scientific?.feature_stability && <a href={`/api/backend/api/v1/runs/${id}/export/selected-features.csv`} download>Отбор признаков CSV</a>}
+        </div>}
         <details><summary>Поисковое пространство и версии пакетов</summary><pre className="metadata-pre">{JSON.stringify({ search_space: config?.search_space, package_versions: detail.provenance.package_versions, fingerprint: detail.fingerprint }, null, 2)}</pre></details>
       </section>}
       {scientific?.feature_stability && <section className="section-surface stack-section" aria-labelledby="stability-title">

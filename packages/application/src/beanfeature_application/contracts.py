@@ -18,6 +18,7 @@ class ExperimentConfig:
     seed: int = 42
     evaluation_mode: Literal["protocol", "smoke"] = "protocol"
     search_space: dict[str, list[object]] = field(default_factory=dict)
+    reproduces_run_id: str | None = None
 
 
 @dataclass(frozen=True)

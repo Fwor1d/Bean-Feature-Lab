@@ -1,6 +1,6 @@
 import type {
   ClassifierModel, ClassifierPrediction, CoreSufficiency, Dataset, DatasetManifest, DatasetQuality, Experiment, FeatureBudgetPoint, FoldResult, PairedComparison,
-  Project, Run, RunDetail, RunSummary, SystemInfo,
+  Project, Run, RunDetail, RunSummary, RunVerification, SystemInfo,
 } from "./contracts";
 
 export class ApiError extends Error {
@@ -43,6 +43,7 @@ export const api = {
   run: (id: number) => request<Run>(`/api/v1/runs/${id}`),
   runSummary: (id: number) => request<RunSummary>(`/api/v1/runs/${id}/summary`),
   runDetail: (id: number) => request<RunDetail>(`/api/v1/runs/${id}/detail`),
+  runVerification: (id: number) => request<RunVerification>(`/api/v1/runs/${id}/verify`),
   runFolds: (id: number) => request<FoldResult[]>(`/api/v1/runs/${id}/folds`),
   featureBudgetSeries: () => request<FeatureBudgetPoint[]>("/api/v1/feature-budget/series"),
   coreSufficiency: () => request<CoreSufficiency[]>("/api/v1/core/sufficiency"),

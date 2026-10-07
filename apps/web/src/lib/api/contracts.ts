@@ -14,6 +14,7 @@ export interface ExperimentConfig {
   seed: number;
   evaluation_mode?: "protocol" | "smoke";
   search_space?: Record<string, unknown[]>;
+  reproduces_run_id?: string | null;
 }
 
 export interface Experiment {
@@ -199,6 +200,17 @@ export interface RunDetail {
   result_artifact: string;
   result_sha256: string;
   artifact_verified: boolean;
+}
+
+export interface RunVerification {
+  run_id: string;
+  verified: boolean;
+  checks: Record<string, boolean>;
+  errors: string[];
+  result_artifact?: string;
+  result_sha256?: string;
+  dataset_sha256?: string;
+  fingerprint?: string;
 }
 
 export interface FoldResult {

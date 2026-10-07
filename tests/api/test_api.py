@@ -57,6 +57,12 @@ def test_create_experiment_and_run_without_fake_metrics(api_client) -> None:
     detail = api_client.get("/api/v1/runs/1/detail")
     assert detail.status_code == 409
     assert detail.json()["error"]["code"] == "not_calculated"
+    verification = api_client.get("/api/v1/runs/1/verify")
+    assert verification.status_code == 200
+    assert verification.json()["verified"] is False
+    export = api_client.get("/api/v1/runs/1/export/result.json")
+    assert export.status_code == 409
+    assert export.json()["error"]["code"] == "conflict"
     assert api_client.get("/api/v1/runs").json()[0]["display_id"] == "RUN-000001"
     assert api_client.post("/api/v1/runs/1/cancel").json()["status"] == "CANCELLED"
     conflict = api_client.post("/api/v1/runs/1/cancel")

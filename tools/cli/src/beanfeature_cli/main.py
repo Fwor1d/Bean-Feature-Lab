@@ -1,4 +1,6 @@
 import json
+import re
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -21,6 +23,15 @@ app.add_typer(run_app, name="runs")
 app.add_typer(dataset_app, name="dataset")
 app.add_typer(core_app, name="core")
 app.add_typer(classifier_app, name="classifier")
+
+
+def _run_primary_key(value: str) -> int:
+    if value.isdigit():
+        return int(value)
+    match = re.fullmatch(r"RUN-(\d{6})", value)
+    if not match:
+        raise typer.BadParameter("Run must be an integer ID or RUN-000001 display ID")
+    return int(match.group(1))
 
 
 @classifier_app.command("train")
@@ -159,6 +170,41 @@ def run_result(run_id: int) -> None:
         typer.echo("NOT_CALCULATED")
     else:
         typer.echo(json.dumps(result["summary"], ensure_ascii=False, indent=2))
+
+
+@run_app.command("verify")
+def verify_run(run: str) -> None:
+    verification = create_container().service.verify_run(_run_primary_key(run))
+    typer.echo(json.dumps(verification, ensure_ascii=False, indent=2))
+    if not verification["verified"]:
+        raise typer.Exit(1)
+
+
+@run_app.command("reproduce")
+def reproduce_run(run: str) -> None:
+    source_id = _run_primary_key(run)
+    created = create_container().service.reproduce_run(source_id)
+    typer.echo(
+        f"{created.display_id} QUEUED as a new reproduction of RUN-{source_id:06d}. "
+        "The source run was not modified."
+    )
+
+
+@run_app.command("export")
+def export_run(
+    run: str,
+    kind: Annotated[
+        str,
+        typer.Option(help="result.json, config.json, folds.csv, or selected-features.csv"),
+    ] = "result.json",
+    output: Annotated[Path | None, typer.Option()] = None,
+) -> None:
+    filename, _media_type, content = create_container().service.export_run(
+        _run_primary_key(run), kind
+    )
+    destination = output or Path(filename)
+    destination.write_bytes(content)
+    typer.echo(str(destination.resolve()))
 
 
 @run_app.command("series")

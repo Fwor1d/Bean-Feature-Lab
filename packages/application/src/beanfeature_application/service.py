@@ -1,3 +1,6 @@
+import csv
+import importlib.util
+import io
 import json
 import math
 import traceback
@@ -16,6 +19,8 @@ from beanfeature_research.contracts import (
 )
 from beanfeature_research.dataset import dataset_quality_summary
 from beanfeature_research.engine import (
+    CV_PROTOCOL_VERSION,
+    SMOKE_PROTOCOL_VERSION,
     EngineCondition,
     NestedResult,
     build_pipeline,
@@ -493,6 +498,224 @@ class ApplicationService:
             "result_sha256": run.result_sha256,
             "artifact_verified": True,
         }
+
+    def verify_run(self, run_id: int) -> dict[str, object]:
+        """Verify immutable provenance, configuration, folds, and artifact integrity."""
+        run = self.get_run(run_id)
+        errors: list[str] = []
+        checks: dict[str, bool] = {}
+        try:
+            payload = self.get_run_result(run_id)
+        except (ValueError, OSError, json.JSONDecodeError) as exc:
+            payload = None
+            errors.append(f"artifact_integrity: {exc}")
+        checks["completed_with_verified_artifact"] = payload is not None
+        if payload is None:
+            return {
+                "run_id": run.display_id,
+                "verified": False,
+                "checks": checks,
+                "errors": errors or ["Scientific result is not available"],
+            }
+
+        experiment = self.get_experiment(run.experiment_id)
+        stored_config = payload.get("configuration")
+        current_config = {
+            key: value
+            for key, value in asdict(experiment.configuration).items()
+            if value is not None
+            or key in (stored_config if isinstance(stored_config, dict) else {})
+        }
+        checks["configuration_consistent"] = stored_config == current_config
+        if not checks["configuration_consistent"]:
+            errors.append("Artifact configuration differs from experiment metadata")
+
+        manifest = payload.get("dataset_manifest")
+        artifact_dataset_hash = manifest.get("arff_sha256") if isinstance(manifest, dict) else None
+        artifact_dataset_version = (
+            manifest.get("dataset_version") if isinstance(manifest, dict) else None
+        )
+        checks["dataset_provenance_consistent"] = (
+            bool(artifact_dataset_hash)
+            and artifact_dataset_hash == run.dataset_hash
+            and artifact_dataset_version == experiment.configuration.dataset_version
+        )
+        if not checks["dataset_provenance_consistent"]:
+            errors.append("Dataset hashes in artifact and run metadata differ")
+
+        summary = payload.get("summary")
+        folds = payload.get("folds")
+        mode = experiment.configuration.evaluation_mode
+        expected_folds = 15 if mode == "protocol" else 2
+        checks["fold_completeness"] = (
+            isinstance(folds, list)
+            and len(folds) == expected_folds
+            and len({fold.get("fold_id") for fold in folds if isinstance(fold, dict)})
+            == expected_folds
+        )
+        if not checks["fold_completeness"]:
+            errors.append(f"Expected {expected_folds} unique outer folds")
+        fold_hashes = [
+            str(fold.get("split_sha256")) for fold in folds or [] if isinstance(fold, dict)
+        ]
+        calculated_split_set = sha256("".join(fold_hashes).encode()).hexdigest()
+        checks["outer_split_hash_consistent"] = (
+            isinstance(summary, dict)
+            and len(fold_hashes) == expected_folds
+            and summary.get("outer_split_set_sha256") == calculated_split_set
+        )
+        if not checks["outer_split_hash_consistent"]:
+            errors.append("Outer split-set hash does not match fold artifacts")
+
+        expected_protocol = CV_PROTOCOL_VERSION if mode == "protocol" else SMOKE_PROTOCOL_VERSION
+        checks["protocol_version_supported"] = (
+            isinstance(summary, dict) and summary.get("cv_protocol_version") == expected_protocol
+        )
+        if not checks["protocol_version_supported"]:
+            errors.append("Run protocol version differs from the current engine")
+
+        provenance = payload.get("provenance")
+        fingerprint_payload = {
+            "configuration": stored_config,
+            "dataset_hash": artifact_dataset_hash,
+            "provenance": provenance,
+        }
+        calculated_fingerprint = sha256(
+            json.dumps(fingerprint_payload, sort_keys=True, default=str).encode()
+        ).hexdigest()
+        checks["fingerprint_consistent"] = (
+            payload.get("fingerprint") == calculated_fingerprint == run.fingerprint
+        )
+        if not checks["fingerprint_consistent"]:
+            errors.append("Configuration/provenance fingerprint differs")
+
+        checks["fold_metrics_finite"] = isinstance(folds, list) and all(
+            isinstance(fold, dict)
+            and all(
+                isinstance(fold.get(key), (int, float)) and math.isfinite(float(fold[key]))
+                for key in ("macro_f1", "accuracy")
+            )
+            for fold in folds
+        )
+        if not checks["fold_metrics_finite"]:
+            errors.append("Fold metrics are missing or non-finite")
+
+        return {
+            "run_id": run.display_id,
+            "verified": all(checks.values()),
+            "checks": checks,
+            "errors": errors,
+            "result_artifact": run.result_artifact,
+            "result_sha256": run.result_sha256,
+            "dataset_sha256": run.dataset_hash,
+            "fingerprint": run.fingerprint,
+        }
+
+    def reproduce_run(self, run_id: int) -> Run:
+        """Create a new queued run from an immutable verified configuration snapshot."""
+        verification = self.verify_run(run_id)
+        if not verification["verified"]:
+            raise ConflictError("Source run failed verification and cannot be reproduced")
+        source = self.get_run(run_id)
+        source_experiment = self.get_experiment(source.experiment_id)
+        if not self.dataset_store:
+            raise RuntimeError("Dataset storage is unavailable")
+        dataset, manifest = self.dataset_store.load()
+        if dataset.arff_sha256 != source.dataset_hash:
+            raise ConflictError("Current validated dataset differs from the source run")
+        model = source_experiment.configuration.model
+        dependency = {
+            ModelId.XGBOOST: "xgboost",
+            ModelId.LIGHTGBM: "lightgbm",
+        }.get(model)
+        if dependency and importlib.util.find_spec(dependency) is None:
+            raise ConflictError(f"Required model dependency is unavailable: {dependency}")
+        configuration = replace(
+            source_experiment.configuration,
+            dataset_version=str(manifest["dataset_version"]),
+            reproduces_run_id=source.display_id,
+        )
+        experiment = self.create_experiment(f"Reproduction of {source.display_id}", configuration)
+        return self.create_run(experiment.id)
+
+    def export_run(self, run_id: int, kind: str) -> tuple[str, str, bytes]:
+        """Create a deterministic export from a verified scientific result."""
+        verification = self.verify_run(run_id)
+        if not verification["verified"]:
+            raise ConflictError("Only a verified completed run can be exported")
+        payload = self.get_run_result(run_id)
+        assert payload is not None
+        run = self.get_run(run_id)
+        if kind == "result.json":
+            content = json.dumps(payload, ensure_ascii=False, indent=2).encode()
+            return f"{run.display_id}-result.json", "application/json", content
+        if kind == "config.json":
+            snapshot = {
+                "run_id": run.display_id,
+                "configuration": payload["configuration"],
+                "dataset_manifest": payload["dataset_manifest"],
+                "provenance": payload["provenance"],
+                "fingerprint": payload["fingerprint"],
+                "result_sha256": run.result_sha256,
+            }
+            content = json.dumps(snapshot, ensure_ascii=False, indent=2).encode()
+            return f"{run.display_id}-config.json", "application/json", content
+        if kind not in {"folds.csv", "selected-features.csv"}:
+            raise ValueError("Unsupported run export kind")
+        output = io.StringIO(newline="")
+        if kind == "folds.csv":
+            fieldnames = [
+                "fold_id",
+                "split_sha256",
+                "train_size",
+                "test_size",
+                "macro_f1",
+                "accuracy",
+                "roc_auc_ovr_macro",
+                "search_seconds",
+                "refit_seconds",
+                "serialized_pipeline_bytes",
+                "peak_memory_bytes",
+                "selected_original_features",
+                "best_params",
+            ]
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+            writer.writeheader()
+            for fold in payload["folds"]:
+                writer.writerow(
+                    {
+                        **{key: fold.get(key) for key in fieldnames},
+                        "selected_original_features": json.dumps(
+                            fold.get("selected_original_features"), ensure_ascii=False
+                        ),
+                        "best_params": json.dumps(
+                            fold.get("best_params"), ensure_ascii=False, sort_keys=True
+                        ),
+                    }
+                )
+            return (
+                f"{run.display_id}-folds.csv",
+                "text/csv; charset=utf-8",
+                output.getvalue().encode(),
+            )
+        writer = csv.DictWriter(output, fieldnames=["fold_id", "feature", "selection_frequency"])
+        writer.writeheader()
+        frequencies = (payload.get("summary") or {}).get("feature_stability")
+        frequency_by_name = frequencies.get("selection_frequency", {}) if frequencies else {}
+        for fold in payload["folds"]:
+            for feature in fold.get("selected_original_features") or []:
+                writer.writerow(
+                    {
+                        "fold_id": fold["fold_id"],
+                        "feature": feature,
+                        "selection_frequency": frequency_by_name.get(feature),
+                    }
+                )
+        return (
+            f"{run.display_id}-selected-features.csv",
+            "text/csv; charset=utf-8",
+            output.getvalue().encode(),
+        )
 
     def feature_budget_series(self) -> list[dict[str, object]]:
         points = []
