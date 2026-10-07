@@ -7,13 +7,25 @@ import pytest
 from sklearn.datasets import make_classification
 
 from beanfeature_application.contracts import ExperimentConfig
-from beanfeature_application.service import ApplicationService
+from beanfeature_application.service import ApplicationService, _normalize_configuration_snapshot
 from beanfeature_infrastructure.bootstrap import create_container
 from beanfeature_infrastructure.database import Base
 from beanfeature_infrastructure.files import ArtifactStore
 from beanfeature_infrastructure.repositories import SQLiteRunRepository
 from beanfeature_research.contracts import ModelId, SelectorId
 from beanfeature_research.dataset import ValidatedDataset
+
+
+def test_legacy_configuration_defaults_normalize_without_mutating_snapshot() -> None:
+    legacy = {"model": "logistic_regression", "selector": "none"}
+    normalized = _normalize_configuration_snapshot(legacy)
+    assert normalized == {
+        "model": "logistic_regression",
+        "selector": "none",
+        "selector_configuration": {},
+        "reproduces_run_id": None,
+    }
+    assert "selector_configuration" not in legacy
 
 
 def test_pca_cannot_be_original_budget(tmp_path) -> None:
@@ -223,6 +235,11 @@ def test_synthetic_end_to_end_persistence_roundtrip(tmp_path) -> None:
     assert config_filename == f"{queued.display_id}-config.json"
     assert config_type == "application/json"
     assert json.loads(config_content)["run_id"] == queued.display_id
+    markdown_filename, markdown_type, markdown_content = service.export_run(queued.id, "summary.md")
+    assert markdown_filename == f"{queued.display_id}-summary.md"
+    assert markdown_type.startswith("text/markdown")
+    assert b"Result state: **CALCULATED**" in markdown_content
+    assert b"does not select a best model" in markdown_content
     resources = service.run_resources(queued.id)
     assert resources["total_nested_search_seconds"] > 0
     assert resources["inference_latency_ms"]["single_row"]["samples"] == 6

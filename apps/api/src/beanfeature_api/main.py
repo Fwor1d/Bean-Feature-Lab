@@ -230,7 +230,13 @@ def create_app(database_url: str | None = None) -> FastAPI:
     @application.get("/api/v1/runs/{run_id}/export/{export_kind}")
     def export_run(
         run_id: int,
-        export_kind: Literal["result.json", "config.json", "folds.csv", "selected-features.csv"],
+        export_kind: Literal[
+            "result.json",
+            "config.json",
+            "summary.md",
+            "folds.csv",
+            "selected-features.csv",
+        ],
         service: Service,
     ) -> Response:
         filename, media_type, content = service.export_run(run_id, export_kind)

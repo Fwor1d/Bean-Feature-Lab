@@ -53,6 +53,16 @@ class ConflictError(Exception):
     pass
 
 
+def _normalize_configuration_snapshot(value: object) -> dict[str, object] | None:
+    """Add only schema defaults introduced after immutable legacy artifacts."""
+    if not isinstance(value, dict):
+        return None
+    normalized = dict(value)
+    normalized.setdefault("selector_configuration", {})
+    normalized.setdefault("reproduces_run_id", None)
+    return normalized
+
+
 class ApplicationService:
     def __init__(
         self,
@@ -851,13 +861,9 @@ class ApplicationService:
 
         experiment = self.get_experiment(run.experiment_id)
         stored_config = payload.get("configuration")
-        current_config = {
-            key: value
-            for key, value in asdict(experiment.configuration).items()
-            if value is not None
-            or key in (stored_config if isinstance(stored_config, dict) else {})
-        }
-        checks["configuration_consistent"] = stored_config == current_config
+        normalized_stored_config = _normalize_configuration_snapshot(stored_config)
+        current_config = asdict(experiment.configuration)
+        checks["configuration_consistent"] = normalized_stored_config == current_config
         if not checks["configuration_consistent"]:
             errors.append("Artifact configuration differs from experiment metadata")
 
@@ -991,6 +997,57 @@ class ApplicationService:
             }
             content = json.dumps(snapshot, ensure_ascii=False, indent=2).encode()
             return f"{run.display_id}-config.json", "application/json", content
+        if kind == "summary.md":
+            summary = payload["summary"]
+            budget = (
+                f"{summary['n_components']} PCA components (all 16 raw measurements required)"
+                if summary["budget_kind"] == "pca_components"
+                else (
+                    "L1 sparse path; observed feature count varies by outer fold"
+                    if summary["budget_kind"] == "sparse_original_features"
+                    else f"{summary['k_original_features']} original features"
+                )
+            )
+            role = (
+                "Core/full-protocol scientific evaluation"
+                if summary["evaluation_mode"] == "protocol"
+                else "Exploratory integration smoke; not a final scientific result"
+            )
+            lines = [
+                f"# {run.display_id} — BeanFeature Lab result",
+                "",
+                "- Result state: **CALCULATED**",
+                f"- Role: {role}",
+                "- Deployment artifact: no",
+                f"- Model: `{summary['model']}`",
+                f"- Selector: `{summary['selector']}`",
+                f"- Representation: {budget}",
+                f"- Dataset SHA-256: `{payload['dataset_manifest']['arff_sha256']}`",
+                f"- Outer split set SHA-256: `{summary['outer_split_set_sha256']}`",
+                f"- Config fingerprint: `{payload['fingerprint']}`",
+                "",
+                "## Calculated metrics",
+                "",
+                f"- Macro-F1 mean: {summary['macro_f1_mean']:.8f}",
+                f"- Accuracy mean: {summary['accuracy_mean']:.8f}",
+                f"- Outer folds completed: {summary['outer_fold_count']}",
+                f"- Macro-F1 fold SD (descriptive): {summary['macro_f1_fold_sd_descriptive']:.8f}",
+                "",
+                "## Interpretation boundary",
+                "",
+                (
+                    "This export reports stored measurements only. It does not select a best model "
+                    "or create a sufficient-k decision. Formal sufficiency is a separate paired "
+                    "analysis against the matching 16-feature baseline."
+                ),
+                "",
+                f"Artifact SHA-256: `{run.result_sha256}`",
+            ]
+            return (
+                f"{run.display_id}-summary.md",
+                "text/markdown; charset=utf-8",
+                ("\n".join(lines) + "\n").encode(),
+            )
         if kind not in {"folds.csv", "selected-features.csv"}:
             raise ValueError("Unsupported run export kind")
         output = io.StringIO(newline="")

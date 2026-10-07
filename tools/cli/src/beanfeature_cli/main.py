@@ -242,7 +242,9 @@ def export_run(
     run: str,
     kind: Annotated[
         str,
-        typer.Option(help="result.json, config.json, folds.csv, or selected-features.csv"),
+        typer.Option(
+            help="result.json, config.json, summary.md, folds.csv, or selected-features.csv"
+        ),
     ] = "result.json",
     output: Annotated[Path | None, typer.Option()] = None,
 ) -> None:

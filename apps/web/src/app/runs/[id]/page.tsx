@@ -74,6 +74,7 @@ export default async function RunDetailPage({ params, searchParams }: {
         {verification?.verified && <div className="action-row" aria-label="Экспорт запуска">
           <a href={`/api/backend/api/v1/runs/${id}/export/result.json`} download>Результат JSON</a>
           <a href={`/api/backend/api/v1/runs/${id}/export/config.json`} download>Снимок config</a>
+          <a href={`/api/backend/api/v1/runs/${id}/export/summary.md`} download>Сводка Markdown</a>
           <a href={`/api/backend/api/v1/runs/${id}/export/folds.csv`} download>Folds CSV</a>
           {scientific?.feature_stability && <a href={`/api/backend/api/v1/runs/${id}/export/selected-features.csv`} download>Отбор признаков CSV</a>}
         </div>}
