@@ -177,6 +177,18 @@ export interface ClassifierPrediction {
   probabilities: Record<string, number>;
   features: Record<string, number>;
   dataset_sha256: string;
+  local_explanation: {
+    method: string;
+    target_class: string;
+    intercept: number;
+    contributions: {
+      feature: string;
+      standardized_value: number;
+      coefficient: number;
+      logit_contribution: number;
+    }[];
+    note: string;
+  } | null;
 }
 
 export interface RunSummary {

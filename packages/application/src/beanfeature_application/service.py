@@ -193,6 +193,37 @@ class ApplicationService:
         scores = {label: float(score) for label, score in zip(labels, probabilities, strict=True)}
         if labels != metadata["classes"] or predicted not in scores:
             raise ValueError("Deployment model class metadata mismatch")
+        local_explanation: dict[str, object] | None = None
+        named_steps = getattr(pipeline, "named_steps", None)
+        if named_steps and "model" in named_steps:
+            estimator = named_steps["model"]
+            if hasattr(estimator, "coef_") and hasattr(estimator, "intercept_"):
+                transformed = pipeline[:-1].transform(frame)[0]
+                class_index = labels.index(predicted)
+                coefficients = estimator.coef_[class_index]
+                contributions = [
+                    {
+                        "feature": name,
+                        "standardized_value": float(value),
+                        "coefficient": float(coefficient),
+                        "logit_contribution": float(value * coefficient),
+                    }
+                    for name, value, coefficient in zip(
+                        names, transformed, coefficients, strict=True
+                    )
+                ]
+                contributions.sort(key=lambda item: abs(item["logit_contribution"]), reverse=True)
+                local_explanation = {
+                    "method": "linear_logit_contribution-v1",
+                    "target_class": predicted,
+                    "intercept": float(estimator.intercept_[class_index]),
+                    "contributions": contributions,
+                    "note": (
+                        "Signed contributions to the predicted-class linear logit after the "
+                        "fitted preprocessing transform; not causal importance and not a "
+                        "probability decomposition."
+                    ),
+                }
         return {
             "model_id": metadata["model_id"],
             "source_run": metadata["source_run"],
@@ -201,6 +232,7 @@ class ApplicationService:
             "probabilities": scores,
             "features": values,
             "dataset_sha256": metadata["dataset_sha256"],
+            "local_explanation": local_explanation,
         }
 
     def create_experiment(self, name: str, configuration: ExperimentConfig) -> Experiment:

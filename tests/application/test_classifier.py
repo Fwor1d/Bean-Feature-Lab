@@ -4,6 +4,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from sklearn.dummy import DummyClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 from beanfeature_application.service import ApplicationService
 from beanfeature_infrastructure.bootstrap import create_container
@@ -58,3 +61,51 @@ def test_classifier_rejects_schema_drift_and_non_finite_values(tmp_path) -> None
     values["Area"] = float("nan")
     with pytest.raises(ValueError, match="finite numeric"):
         service.predict_classifier(values)
+
+
+def test_logistic_classifier_returns_exact_local_logit_contributions(tmp_path) -> None:
+    container = create_container(f"sqlite:///{tmp_path / 'test.sqlite'}")
+    Base.metadata.create_all(container.metadata.engine)
+    store = LocalDeploymentModelStore(tmp_path / "models")
+    rows = [
+        [float(class_index * 4 + repeat + feature_index / 10) for feature_index in range(16)]
+        for class_index in range(len(CLASSES))
+        for repeat in range(3)
+    ]
+    target = [label for label in CLASSES for _ in range(3)]
+    features = pd.DataFrame(rows, columns=FEATURE_COLUMNS)
+    pipeline = Pipeline(
+        [
+            ("scale", StandardScaler()),
+            ("select", "passthrough"),
+            ("model", LogisticRegression(max_iter=1000, random_state=42)),
+        ]
+    ).fit(features, target)
+    store.save(
+        pipeline,
+        {
+            "model_id": "test-logistic-v1",
+            "model_family": "Logistic Regression",
+            "source_run": "RUN-000003",
+            "dataset_id": 602,
+            "dataset_sha256": "b" * 64,
+            "feature_names": list(FEATURE_COLUMNS),
+            "classes": [str(value) for value in pipeline.classes_],
+            "training_timestamp_utc": "2026-01-01T00:00:00+00:00",
+            "selected_parameters": {},
+            "deployment_model": True,
+            "note": "test-only",
+        },
+    )
+    container.service.deployment_models = store
+    values = {name: float(features.iloc[8][name]) for name in FEATURE_COLUMNS}
+    result = container.service.predict_classifier(values)
+    explanation = result["local_explanation"]
+    assert explanation and explanation["method"] == "linear_logit_contribution-v1"
+    assert len(explanation["contributions"]) == 16
+    explained_logit = explanation["intercept"] + sum(
+        item["logit_contribution"] for item in explanation["contributions"]
+    )
+    predicted_index = list(pipeline.classes_).index(result["predicted_class"])
+    expected_logit = pipeline.decision_function(pd.DataFrame([values]))[0][predicted_index]
+    assert explained_logit == pytest.approx(expected_logit)

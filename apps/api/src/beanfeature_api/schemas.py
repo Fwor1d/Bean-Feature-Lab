@@ -332,6 +332,7 @@ class PredictResponse(BaseModel):
     probabilities: dict[str, float]
     features: dict[str, float]
     dataset_sha256: str
+    local_explanation: dict[str, object] | None = None
 
 
 class FoldResultResponse(BaseModel):

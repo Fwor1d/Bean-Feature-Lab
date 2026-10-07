@@ -87,6 +87,11 @@ export function ClassifierForm({ model }: { model: ClassifierModel }) {
         <TableBody>{Object.entries(result.probabilities).sort((a, b) => b[1] - a[1]).map(([label, probability]) => <TableRow key={label}><TableCell>{label}</TableCell><TableCell align="right">{(probability * 100).toFixed(2)}%</TableCell></TableRow>)}</TableBody>
       </Table>
       <Box sx={{ mt: 1, fontSize: 12, color: "text.secondary" }}>Вероятности получены из predict_proba финального pipeline; это не оценка точности на независимой выборке.</Box>
+      {result.local_explanation && <Box sx={{ mt: 2 }}>
+        <Typography component="h3" sx={{ fontSize: 15, fontWeight: 700, mb: 0.5 }}>Локальные вклады в logit класса {result.local_explanation.target_class}</Typography>
+        <Table size="small" aria-label="Локальные вклады Logistic Regression"><TableHead><TableRow><TableCell>Признак</TableCell><TableCell align="right">Стандартизованное значение</TableCell><TableCell align="right">Коэффициент</TableCell><TableCell align="right">Вклад в logit</TableCell></TableRow></TableHead><TableBody>{result.local_explanation.contributions.map(item => <TableRow key={item.feature}><TableCell>{item.feature}</TableCell><TableCell align="right">{item.standardized_value.toFixed(3)}</TableCell><TableCell align="right">{item.coefficient.toFixed(4)}</TableCell><TableCell align="right">{item.logit_contribution.toFixed(4)}</TableCell></TableRow>)}</TableBody></Table>
+        <Box sx={{ mt: 1, fontSize: 12, color: "text.secondary" }}>Знак и величина показывают вклад только в линейный logit предсказанного класса после fitted scaling. Это локальное математическое разложение, не causal и не global importance; сумма вкладов не является вероятностью.</Box>
+      </Box>}
     </section>}
     {history.length > 0 && <section className="table-surface" style={{ marginTop: 16 }} aria-labelledby="history-title">
       <div className="table-heading"><h2 id="history-title">История текущей сессии</h2><span className="table-note">Только в памяти браузера · не scientific database</span></div>
