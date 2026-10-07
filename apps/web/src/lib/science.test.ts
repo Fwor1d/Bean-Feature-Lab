@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FeatureBudgetPoint } from "./api/contracts";
-import { budgetCohorts, metric } from "./science";
+import { budgetCohorts, expectedBudgetConditions, metric } from "./science";
 
 const point = (dataset_hash: string, outer_split_set_sha256: string, k_original_features: number): FeatureBudgetPoint => ({
   run_id: `RUN-${k_original_features}`, model: "logistic_regression", selector: "mutual_information",
@@ -17,5 +17,13 @@ describe("scientific display invariants", () => {
 
   it("renders an absent scientific decision as not calculated rather than zero", () => {
     expect(metric(null, 0)).toBe("Не рассчитано");
+  });
+
+  it("distinguishes full curves, comparator checkpoints, and variable sparsity", () => {
+    expect(expectedBudgetConditions("mutual_information")).toBe(16);
+    expect(expectedBudgetConditions("pca")).toBe(16);
+    expect(expectedBudgetConditions("anova")).toBe(6);
+    expect(expectedBudgetConditions("rfe")).toBe(6);
+    expect(expectedBudgetConditions("l1_logistic")).toBeNull();
   });
 });

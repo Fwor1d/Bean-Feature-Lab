@@ -21,6 +21,12 @@ export const selectorLabel: Record<SelectorId, string> = {
   correlation_pruning: "Correlation pruning", sequential_feature_selection: "Sequential selection",
 };
 
+export function expectedBudgetConditions(selector: SelectorId): number | null {
+  if (["mutual_information", "pca"].includes(selector)) return 16;
+  if (["anova", "rfe", "tree_importance"].includes(selector)) return 6;
+  return null;
+}
+
 export const runLabel: Record<RunStatus, string> = {
   DRAFT: "Черновик", QUEUED: "В очереди", RUNNING: "Выполняется",
   COMPLETED: "Завершён", FAILED: "Ошибка", CANCELLED: "Отменён",

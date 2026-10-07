@@ -5,7 +5,7 @@ import { EmptyPlot } from "@/components/EmptyPlot";
 import { ScientificPlot } from "@/components/ScientificPlot";
 import { api, apiErrorMessage } from "@/lib/api/client";
 import type { CoreSufficiency, Experiment, FeatureBudgetPoint, Run, SelectorId } from "@/lib/api/contracts";
-import { budgetCohorts, metric, modelLabel, selectorLabel } from "@/lib/science";
+import { budgetCohorts, expectedBudgetConditions, metric, modelLabel, selectorLabel } from "@/lib/science";
 
 type Query = { budget?: string; model?: string; selector?: string; cohort?: string };
 const originalSelectors: SelectorId[] = ["mutual_information", "anova", "rfe", "l1_logistic", "tree_importance"];
@@ -72,9 +72,9 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
     budgets.add(point.budget_value);
     perModel.set(point.model, budgets);
   }
-  const expectedPoints = ["anova", "rfe", "tree_importance"].includes(selectedSelector) ? 6 : 16;
-  const partial = points.length > 0 && [...perModel.values()].some(budgets => budgets.size < expectedPoints);
-  const measured = [...perModel.entries()].map(([model, budgets]) => `${modelLabel[model as FeatureBudgetPoint["model"]]}: ${budgets.size}/${expectedPoints}`).join(" · ");
+  const expectedPoints = expectedBudgetConditions(selectedSelector);
+  const partial = expectedPoints != null && points.length > 0 && [...perModel.values()].some(budgets => budgets.size < expectedPoints);
+  const measured = [...perModel.entries()].map(([model, budgets]) => `${modelLabel[model as FeatureBudgetPoint["model"]]}: ${budgets.size}/${expectedPoints ?? "variable"}`).join(" · ");
   const visibleModels = new Set(points.map(point => point.model));
   const visibleSufficiency = selectedSelector === "mutual_information" && !pca
     ? sufficiency.filter(item => visibleModels.has(item.model)) : [];

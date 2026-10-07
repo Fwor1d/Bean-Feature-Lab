@@ -4,7 +4,7 @@ import { FeatureExplorerControls } from "@/components/FeatureExplorerControls";
 import { FeatureSelectionHeatmap } from "@/components/FeatureSelectionHeatmap";
 import { api, apiErrorMessage } from "@/lib/api/client";
 import type { DatasetManifest, DatasetQuality, FeatureSelectionPoint, ModelId, SelectorId } from "@/lib/api/contracts";
-import { metric, modelLabel, selectorLabel } from "@/lib/science";
+import { expectedBudgetConditions, metric, modelLabel, selectorLabel } from "@/lib/science";
 
 type Query = { model?: string; selector?: string; k?: string };
 
@@ -32,7 +32,7 @@ export default async function FeaturesPage({ searchParams }: { searchParams: Pro
   const selectors = [...new Set(validSeries.filter(point => !selected || point.model === selected.model).map(point => point.selector))].sort() as SelectorId[];
   const heatmapPoints = selected ? validSeries.filter(point => point.model === selected.model && point.selector === selected.selector && point.outer_split_set_sha256 === selected.outer_split_set_sha256) : [];
   const budgets = heatmapPoints.map(point => point.k_original_features).sort((a, b) => a - b);
-  const expectedBudgets = selected && ["anova", "rfe", "tree_importance"].includes(selected.selector) ? 6 : 16;
+  const expectedBudgets = selected ? expectedBudgetConditions(selected.selector) : null;
   const firstSelectedBudget = new Map((manifest?.features ?? []).map(feature => [feature,
     heatmapPoints.filter(point => (point.selection_frequency[feature] ?? 0) > 0)
       .map(point => point.k_original_features).sort((a, b) => a - b)[0] ?? null]));
@@ -72,7 +72,7 @@ export default async function FeaturesPage({ searchParams }: { searchParams: Pro
         })}</TableBody></Table>
       </section>
       {selected && heatmapPoints.length > 0 && <section className="figure-surface" aria-labelledby="selection-map-title">
-        <div className="figure-heading"><h2 id="selection-map-title">Частота отбора по бюджетам</h2><Chip label={`${modelLabel[selected.model]} · ${heatmapPoints.length}/${expectedBudgets} условий`} size="small" variant="outlined" /></div>
+        <div className="figure-heading"><h2 id="selection-map-title">Частота отбора по бюджетам</h2><Chip label={`${modelLabel[selected.model]} · ${heatmapPoints.length}/${expectedBudgets ?? "variable"} условий`} size="small" variant="outlined" /></div>
         <FeatureSelectionHeatmap features={manifest.features} points={heatmapPoints} />
         <p className="table-note">Каждая ячейка — реальная доля outer folds, в которых признак выбран. Отсутствующие k не интерполируются.</p>
       </section>}
