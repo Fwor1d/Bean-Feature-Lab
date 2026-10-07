@@ -61,8 +61,8 @@ class ProcessTreeMeasurement:
             return self.finished
         self.finished = {
             "status": "CALCULATED",
-            "measurement_kind": "sequential-worker-process-tree-rss-v1",
-            "scope": "dataset-load, nested-search, refit, and evaluation before persistence",
+            "measurement_kind": "isolated-run-process-tree-rss-v1",
+            "scope": "fresh run process: dataset-load, nested-search, refit, and evaluation",
             "baseline_process_tree_rss_bytes": self.baseline_rss,
             "peak_process_tree_rss_bytes": peak,
             "incremental_peak_rss_bytes": max(0, peak - self.baseline_rss),
@@ -81,7 +81,7 @@ class ProcessTreeMeasurement:
             },
             "note": (
                 "Sampled RSS includes the sequential worker process and observed children. "
-                "Incremental RSS is relative to the warm worker baseline and remains an "
+                "Incremental RSS is relative to the fresh child-process baseline and remains an "
                 "engineering measurement, not a scientific outcome."
             ),
         }

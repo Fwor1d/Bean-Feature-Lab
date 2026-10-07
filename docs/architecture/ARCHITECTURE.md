@@ -1,6 +1,6 @@
 # Архитектура BeanFeature Lab
 
-Статус: архитектурный проект до реализации; утверждённые решения по UI, основной матрице, метрикам и локальному worker зафиксированы ниже. Источники продуктовых ограничений — [`PRODUCT.md`](../../PRODUCT.md) и [научный доклад](../research/Влияние_количества_признаков_семян_фасоли_на_точность_их_классификации.docx). Экспериментальные значения, лучшая модель и минимальный `k` неизвестны. Дерево ниже описывает будущие модули; перечисленные production-файлы не созданы.
+Статус: production-oriented локальная архитектура реализована. Leakage-safe engine, application/infrastructure boundaries, SQLite queue, filesystem artifacts, API/CLI/worker, deployment registry и Instrument Workstation UI работают на официальном UCI 602. Источники продуктовых ограничений — [`PRODUCT.md`](../../PRODUCT.md), [`EXPERIMENT_PROTOCOL.md`](../research/EXPERIMENT_PROTOCOL.md) и [исходный научный доклад](../research/Влияние_количества_признаков_семян_фасоли_на_точность_их_классификации.docx). Числовые выводы не фиксируются в этом документе: они читаются из hash-verified runtime artifacts.
 
 ## Границы системы
 
@@ -26,7 +26,7 @@ flowchart LR
 
 Первая версия использует **один локальный worker** с последовательным или явно ограниченным выполнением тяжёлых experiment jobs. Очередь и статус run сохраняются устойчиво через application/infrastructure; отмена и ошибка фиксируются как переходы состояния. Worker проверяет отмену между безопасными этапами, например между folds, и завершает активный процесс контролируемо. FastAPI только ставит задание и читает статус — nested CV не выполняется внутри HTTP request. Redis, Celery и иная распределённая инфраструктура в первую версию не входят. Порт исполнения заданий позволяет позднее заменить локальный backend без изменения ML/research ядра.
 
-## Предлагаемое дерево репозитория
+## Реализованные границы репозитория
 
 ```text
 BeanFeatureLab/
@@ -71,7 +71,7 @@ BeanFeatureLab/
 ├── data/
 │   ├── raw/                        # неизменяемые копии источников и hashes
 │   └── processed/                  # проверенные версии данных и manifests
-├── storage/sqlite/                 # будущая локальная metadata/results DB
+├── storage/sqlite/                 # локальная metadata/results DB (runtime, ignored)
 ├── artifacts/
 │   ├── runs/                       # snapshots, predictions, logs по run ID
 │   └── models/                     # доверенные обученные модели
@@ -88,7 +88,7 @@ BeanFeatureLab/
         └── Влияние_количества_признаков_семян_фасоли_на_точность_их_классификации.docx
 ```
 
-`data/processed` допускает только воспроизводимые проверки схемы, типов и преобразования, не обучаемые на распределении всей выборки. Масштабирование, импутация при необходимости, feature selection, PCA и любая статистика, зависящая от данных, создаются внутри CV pipeline. Политика версионирования/игнорирования больших файлов определяется до первого импорта данных; в этой фазе датасет не загружается.
+`data/processed` содержит воспроизводимый manifest проверки официального ARFF, но не обучаемые на всей выборке preprocessing statistics. Масштабирование, feature selection, PCA и любая статистика, зависящая от training data, создаются внутри CV pipeline. Raw/processed dataset files, runtime SQLite и generated artifacts исключены из Git; hashes и provenance сохраняются рядом с научным результатом.
 
 ## Запуск, идентичность и хранение
 
@@ -96,44 +96,41 @@ BeanFeatureLab/
 
 Для официально воспроизводимого запуска требуется Git commit. Исследовательский запуск при незакоммиченном состоянии допускается только с явной пометкой `dirty`, hash снимка изменений и неизменяемой копией конфигурации; пустой Git SHA нельзя подменять вымышленным. Timestamp хранится в UTC. Все артефакты получают относительный путь внутри проекта, размер и SHA-256; API не принимает произвольные пути к файлам и не загружает присланные пользователем сериализованные модели.
 
-Предлагаемые сущности SQLite (это описание, **не** созданная схема БД):
+Реализованные SQLite metadata entities и файловые companions:
 
 | Сущность | Ответственность и ключевые поля |
 |---|---|
 | `dataset_versions` | Источник `UCI Machine Learning Repository — Dry Bean Dataset — Dataset ID 602`, версия/дата получения, raw и processed hashes, схема 16 признаков, путь к manifest. |
-| `experiment_definitions` | ID, версия конфигурации, canonical JSON, hash, создано/утверждено. |
-| `experiment_runs` | `run_id`, definition ID, UTC timestamps, status, Git SHA/dirty state, seed, dataset version/hash, environment snapshot, ошибка последнего шага. |
-| `run_conditions` | Модель, selector, search space, `budget_kind`, запрошенное `k`, число исходных входных измерений, стадия матрицы. |
-| `cv_splits` | Повтор/fold, seeds, hash и путь к индексам train/test, число объектов и классов. |
-| `fold_results` | Condition и outer fold, лучшие inner-параметры, выбранные **исходные** признаки или PCA metadata, fold-level метрики, fit/inference time, peak RSS, путь к prediction/model artifacts, статус. |
-| `aggregate_results` | Группировка по condition, метрики и неопределённость с версией метода агрегации, ресурсные сводки; публикуется только после завершения требуемых folds. |
+| `experiments` | ID, immutable configuration JSON, model/selector/budget/search-space/seed/dataset version, UTC timestamps. |
+| `runs` | Atomic integer key → `RUN-000001`, experiment ID, status/timestamps/error, summary JSON, dataset/fingerprint/artifact hashes and relative references. |
 | `run_events` | Переходы статуса, ошибки с этапом и временем, предупреждения, попытки возобновления. |
-| `model_registry` | Позднее: ссылка на проверенный artifact, schema входа, provenance и статус допуска к classifier demo. |
+| `worker_heartbeat` | Последний heartbeat единственного локального worker для operational status. |
+| `artifacts/runs/RUN-*/` | Fold JSON, complete result, splits, predictions, selected features, confusion matrices, provenance и derived comparisons. |
+| `artifacts/models/registry.json` | Versioned deployment entries: active status, source run/config, feature schema, model/artifact hashes and timestamps. |
 
-Для `run_conditions` нужен явный `budget_kind`: `original_features` или `pca_components`. При **фиксированном** бюджете `original_features` запрошенное `k` — точное число исходных колонок. При `pca_components` запрошенное `k` — число компонент; `required_raw_feature_count` обычно остаётся 16 и никогда не выводится из числа компонент. Для L1-path с переменной разреженностью запрошенное `k` равно `null`, а `observed_nonzero_count` сохраняется по каждому fold; его нельзя выдавать за заранее заданное `k`. Выбранные признаки в PCA-ветви — `null`, а не вымышленный список физических измерений.
+Для condition обязателен явный `budget_kind`: `original_features`, `pca_components` или `sparse_original_features`. При **фиксированном** бюджете `original_features` запрошенное `k` — точное число исходных колонок. При `pca_components` хранится `n_components`, а `required_raw_feature_count` остаётся 16 и никогда не выводится из числа компонент. Для L1-path `k_original_features=null`, selector `C` зафиксирован в config, а `observed_nonzero_count` сохраняется по каждому fold; его нельзя выдавать за заранее заданное `k`. Выбранные признаки в PCA-ветви — `null`, а не вымышленный список физических измерений.
 
-Run проходит состояния `queued → running → completed`, либо `cancelling → cancelled` или `failed`. Статус сохраняется до ответа API; после сбоя локальный worker сверяет незавершённые задания и не выдаёт их за успешные. Неудачный или частичный run сохраняет уже полученные fold records и ошибку, но не публикует итоговые метрики как завершённые. Неполученные значения — `null` с явным состоянием `not_calculated`; ноль означает реально измеренный ноль. Worker пишет артефакт во временный файл, проверяет hash, затем атомарно перемещает и фиксирует metadata; краткие SQLite-транзакции и один writer-путь предотвращают длительную блокировку БД.
+Run проходит состояния `DRAFT/QUEUED → RUNNING → COMPLETED`, либо `FAILED/CANCELLED`. Статус сохраняется до ответа API; после сбоя локальный worker переводит незавершённый `RUNNING` в failure и не выдаёт его за успешный. Partial fold files могут остаться для диагностики, но final metrics публикуются только после всех outer folds, записи result artifact и проверки SHA-256. Неполученные значения — `null` с явным `NOT_CALCULATED`; ноль означает реально измеренный ноль. Краткие SQLite-транзакции и один последовательный writer предотвращают длительную блокировку БД.
 
 ## API boundaries
 
-Группы будущих `/api/v1` endpoint'ов и их роль; URL ниже — контрактное предложение, не реализованные маршруты.
+Реализованные группы `/api/v1` endpoint'ов и их роль:
 
 | Группа | Возможные операции | Источник ответа |
 |---|---|---|
 | `datasets` | список версий, manifest, валидация доступного файла | SQLite metadata и файловый manifest; не передавать весь датасет по умолчанию |
 | `experiments` | шаблоны/definitions, просмотр конфигурации | SQLite, immutable config snapshot |
 | `runs` | создать, статус, отменить, folds, результаты, ошибки | application service и сохранённые данные |
-| `models` | зарегистрированные проверенные artifacts, schema входа | registry и файловый manifest |
+| `classifier` | active deployment model, benchmark, real UCI example, prediction | versioned model registry и полный fitted pipeline |
 | `features` | budgets, selection frequency, stability, PCA variance | заранее рассчитанные scientific aggregates |
-| `comparisons` | сравнение условий/моделей по общим folds | сохранённые агрегаты и дешёвый join/filter |
-| `predictions` | табличное предсказание проверенной модели | отдельный inference use case; не эксперимент |
+| `core/sufficiency`, paired comparison | corrected paired decisions по общим folds | verified fold artifacts; отдельный derived analysis |
 | `system/reproducibility` | Git/data/software provenance, состояние worker | сохранённый environment snapshot и статус |
 
 Сервер заранее вычисляет и сохраняет fold-level метрики, confidence/uncertainty по утверждённой методике, confusion matrices, selection frequency/Jaccard и resource summaries. Запрос может дешёво фильтровать, сортировать, пагинировать, соединять записи и превращать сохранённые сводки в серии для Plotly; при смене **научной** формулы создаётся версия расчёта, а не скрытый пересчёт в браузере. Большие predictions и модели выдаются через управляемые ссылки/экспорт, а не в каждой выдаче списка. Для ошибок API различает `not_run`, `running`, `failed`, `not_calculated` и `completed`.
 
-## Поддерживаемые страницы без визуального проектирования
+## Реализованные product surfaces
 
-Текущие маршруты приложения могут опираться на одни и те же API-сущности: Overview — состояние и реальные сводки; Experiments — definitions; Experiment Runner — запуск и прогресс; Feature Budget — серии по `k` и его типу; Feature Explorer — частоты и stability; Model/experiment comparison — парные сравнения; Classifier Demo — инференс только через зарегистрированную модель. При отсутствии результатов каждая страница показывает `not run`/`not calculated`, а не случайные данные.
+Маршруты `/`, `/experiments`, `/runs`, `/runs/[id]`, `/feature-budget`, `/features`, `/compare`, `/classifier` и `/settings` используют один typed client и сохранённые API-сущности. Feature Budget строит линии только для полностью рассчитанных `k=1…16` series; partial series остаются отдельными измеренными markers. Run detail является reproducibility report. Classifier применяет только active registered pipeline. При отсутствии результатов страницы показывают loading/error/partial/`not calculated`, а не случайные данные.
 
 Поздние Experiment Registry, Pareto Analysis, Conference Mode, расширенные сравнения, ручная ablation и генерация отчёта добавляются как новые application queries/commands и UI-маршруты поверх сохранённых fold results и artifacts. Они не требуют переноса ML-логики в API или frontend. Ручная ablation создаёт новую версионируемую experiment definition и честный run, а не изменяет сохранённые научные результаты.
 
@@ -155,10 +152,10 @@ Run проходит состояния `queued → running → completed`, ли
 | Объём собственного UI-кода | Меньше для форм и shell; больше интеграционной работы, если нужен сложный grid из extension. | Меньше для реестров и таблиц благодаря Data Grid; тема и композиция потребуют работы, но базовые элементы не переписываются. |
 | Иконки и поддерживаемость | Совместим с `@tabler/icons-react`; Core и grid-extension обновляются отдельно. | Совместим с `@tabler/icons-react`; Core и X имеют официальную поддержку, но план функций X надо проверять до использования. |
 
-**Причина утверждённого выбора:** реестры запусков и сравнения требуют готового доступного data grid с минимальным собственным кодом. При будущем проектировании не брать типовой AI/SaaS dashboard template: структура должна исходить из научных задач и происхождения данных. Выбор библиотеки не задаёт палитру, типографику и визуальную композицию; они относятся к отдельному этапу. Если возникнет потребность в функциях Pro/Premium, требуется отдельное будущее решение; первая версия на них не опирается. При build закрепить совместимые версии и провести проверку доступности реальных страниц и Plotly.
+**Причина утверждённого выбора:** реестры запусков и сравнения требуют готового доступного data grid с минимальным собственным кодом. Реализованный Instrument Workstation следует научным задачам и происхождению данных, а не типовому AI/SaaS dashboard template. Если возникнет потребность в функциях Pro/Premium, потребуется отдельное решение; текущая версия на них не опирается.
 
 Основание сравнения: официальные документы [Mantine Next.js](https://mantine.dev/guides/next/), [Mantine AppShell](https://mantine.dev/core/app-shell/), [Mantine Table](https://mantine.dev/core/table/), [Mantine Forms](https://mantine.dev/form/validation/), [Mantine accessibility](https://help.mantine.dev/q/are-mantine-components-accessible), [MUI Next.js](https://mui.com/material-ui/integrations/nextjs/), [MUI Data Grid](https://mui.com/x/react-data-grid/), [MUI X licensing](https://mui.com/x/introduction/licensing/), [Data Grid filtering](https://mui.com/x/react-data-grid/filtering/), [Data Grid sorting](https://mui.com/x/react-data-grid/sorting/), [Data Grid pagination](https://mui.com/x/react-data-grid/pagination/), [MUI Data Grid accessibility](https://mui.com/x/react-data-grid/accessibility/), [Tabler React icons](https://tabler.io/icons/packages). Сведения о возможностях библиотек проверены на этапе проектирования; совместимость конкретных версий следует повторно проверить перед установкой.
 
-## Решения перед build
+## Зафиксированные решения и открытые границы
 
-Для перехода к **визуальному концепту** блокирующих продуктовых или UI-stack решений нет; облик интерфейса формируется на отдельном этапе. Перед научным build остаётся определить метод интервала для зависимых repeated-CV оценок, search budget и контрольные точки `k` в конфигурации, условия resource benchmark и необходимость независимой подтверждающей выборки. Способ развёртывания и политика доступа к локальным данным/артефактам решаются до production-развёртывания. Утверждённый margin macro-F1 `0.01`, Core-модели и обязательные метрики не являются открытыми решениями.
+Метод corrected repeated-CV interval, Bonferroni family, margin `0.01`, search spaces, comparator points, resource measurement profile и classifier deployment boundary зафиксированы до соответствующих вычислений. Public hosting работает как локальный Mac-hosted read-only surface: classifier prediction разрешён как bounded side-effect-free inference, scientific writes заблокированы. Независимый подтверждающий dataset, отдельная честная процедура выбора «лучшей» model/selector family, calibration research, Pareto analysis и Conference Mode остаются явно вне текущего Core; их отсутствие не подменяется выводами из уже просмотренных outer-CV curves.

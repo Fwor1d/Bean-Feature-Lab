@@ -7,5 +7,5 @@ def test_process_tree_resource_monitor_records_explicit_scope() -> None:
     assert result["peak_process_tree_rss_bytes"] >= result["baseline_process_tree_rss_bytes"]
     assert result["incremental_peak_rss_bytes"] >= 0
     assert result["rss_samples"] >= 1
-    expected_scope = "dataset-load, nested-search, refit, and evaluation before persistence"
+    expected_scope = "fresh run process: dataset-load, nested-search, refit, and evaluation"
     assert result["scope"] == expected_scope
