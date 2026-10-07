@@ -14,10 +14,12 @@ from beanfeature_infrastructure.bootstrap import Container, create_container
 from beanfeature_research.contracts import ModelId
 
 from .schemas import (
+    ClassifierExampleResponse,
     CoreSufficiencyResponse,
     CreateExperimentRequest,
     DatasetQualityResponse,
     DatasetResponse,
+    DeploymentModelResponse,
     ErrorResponse,
     ExperimentResponse,
     FeatureBudgetPointResponse,
@@ -69,6 +71,12 @@ def create_app(database_url: str | None = None) -> FastAPI:
     @application.middleware("http")
     async def public_demo_guard(request: Request, call_next):
         inference = request.method == "POST" and request.url.path == "/api/v1/classifier/predict"
+        if inference:
+            content_length = request.headers.get("content-length")
+            if content_length and not content_length.isdigit():
+                return error_response("invalid_request", "Invalid Content-Length header", 400)
+            if content_length and int(content_length) > 32_768:
+                return error_response("payload_too_large", "Classifier request exceeds 32 KiB", 413)
         if demo_read_only and request.method not in {"GET", "HEAD", "OPTIONS"} and not inference:
             return error_response("demo_read_only", "Public presentation is read-only", 403)
         return await call_next(request)
@@ -134,16 +142,16 @@ def create_app(database_url: str | None = None) -> FastAPI:
     def dataset_quality(dataset_id: int, service: Service) -> DatasetQualityResponse:
         return DatasetQualityResponse.model_validate(service.dataset_quality(dataset_id))
 
-    @application.get("/api/v1/classifier/model")
+    @application.get("/api/v1/classifier/model", response_model=DeploymentModelResponse)
     def classifier_model(service: Service):
         model = service.classifier_info()
         if model is None:
             return error_response("not_found", "Deployment model is not registered", 404)
         return model
 
-    @application.get("/api/v1/classifier/example")
-    def classifier_example(service: Service):
-        return {"features": service.classifier_example()}
+    @application.get("/api/v1/classifier/example", response_model=ClassifierExampleResponse)
+    def classifier_example(service: Service) -> ClassifierExampleResponse:
+        return ClassifierExampleResponse.model_validate(service.classifier_example())
 
     @application.post("/api/v1/classifier/predict", response_model=PredictResponse)
     def classifier_predict(body: PredictRequest, service: Service):

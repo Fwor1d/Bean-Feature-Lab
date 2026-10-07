@@ -41,6 +41,26 @@ def train_classifier() -> None:
     typer.echo(json.dumps(metadata, ensure_ascii=False, indent=2))
 
 
+@classifier_app.command("predict-example")
+def predict_classifier_example() -> None:
+    """Predict one real UCI row; this is a demo, not a scientific evaluation."""
+    service = create_container().service
+    example = service.classifier_example()
+    prediction = service.predict_classifier(example["features"])
+    typer.echo(
+        json.dumps(
+            {
+                **prediction,
+                "actual_class": example["actual_class"],
+                "correct": prediction["predicted_class"] == example["actual_class"],
+                "demo_note": "One UCI row; not an evaluation metric.",
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
 @dataset_app.command("fetch")
 def fetch_dataset(
     accept_official_schema: bool = typer.Option(

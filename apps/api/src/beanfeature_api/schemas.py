@@ -83,6 +83,45 @@ class DatasetQualityResponse(BaseModel):
     schema_notice: str
 
 
+class ObservedRangeResponse(BaseModel):
+    minimum: float
+    maximum: float
+
+
+class DeploymentModelResponse(BaseModel):
+    model_id: str
+    model_version: str | None = None
+    model_family: str
+    estimator_identifier: str | None = None
+    source_run: str
+    source_result_sha256: str | None = None
+    source_configuration: dict[str, object] | None = None
+    dataset_id: int
+    dataset_sha256: str
+    dataset_version: str | None = None
+    training_rows: int | None = None
+    feature_names: list[str]
+    feature_schema: list[dict[str, object]] | None = None
+    observed_ranges: dict[str, ObservedRangeResponse] | None = None
+    classes: list[str]
+    training_timestamp_utc: str
+    selected_parameters: dict[str, object]
+    deployment_model: Literal[True]
+    deployment_status: Literal["ACTIVE", "INACTIVE"] | None = None
+    active: bool | None = None
+    artifact_sha256: str | None = None
+    model_sha256: str
+    note: str
+
+
+class ClassifierExampleResponse(BaseModel):
+    source: str
+    row_index: int
+    features: dict[str, float]
+    actual_class: str
+    note: str
+
+
 class ExperimentConfigDTO(BaseModel):
     model: ModelId
     selector: SelectorId

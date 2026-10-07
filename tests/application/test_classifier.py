@@ -1,0 +1,60 @@
+import math
+from pathlib import Path
+
+import pandas as pd
+import pytest
+from sklearn.dummy import DummyClassifier
+
+from beanfeature_application.service import ApplicationService
+from beanfeature_infrastructure.bootstrap import create_container
+from beanfeature_infrastructure.database import Base
+from beanfeature_infrastructure.deployment import LocalDeploymentModelStore
+from beanfeature_research.dataset import CLASSES, FEATURE_COLUMNS
+
+
+def classifier_service(tmp_path: Path) -> ApplicationService:
+    container = create_container(f"sqlite:///{tmp_path / 'test.sqlite'}")
+    Base.metadata.create_all(container.metadata.engine)
+    store = LocalDeploymentModelStore(tmp_path / "models")
+    features = pd.DataFrame(
+        [[float(index + 1)] * len(FEATURE_COLUMNS) for index in range(len(CLASSES))],
+        columns=FEATURE_COLUMNS,
+    )
+    estimator = DummyClassifier(strategy="prior").fit(features, list(CLASSES))
+    store.save(
+        estimator,
+        {
+            "model_id": "test-classifier-v1",
+            "model_family": "Dummy test estimator",
+            "source_run": "RUN-000001",
+            "dataset_id": 602,
+            "dataset_sha256": "a" * 64,
+            "feature_names": list(FEATURE_COLUMNS),
+            "classes": list(CLASSES),
+            "training_timestamp_utc": "2026-01-01T00:00:00+00:00",
+            "selected_parameters": {},
+            "deployment_model": True,
+            "note": "test-only",
+        },
+    )
+    container.service.deployment_models = store
+    return container.service
+
+
+def test_classifier_returns_real_estimator_probabilities(tmp_path) -> None:
+    service = classifier_service(tmp_path)
+    values = {name: 1.0 for name in FEATURE_COLUMNS}
+    result = service.predict_classifier(values)
+    assert result["predicted_class"] in CLASSES
+    assert math.isclose(sum(result["probabilities"].values()), 1.0)
+    assert result["predicted_probability"] == result["probabilities"][result["predicted_class"]]
+
+
+def test_classifier_rejects_schema_drift_and_non_finite_values(tmp_path) -> None:
+    service = classifier_service(tmp_path)
+    values = {name: 1.0 for name in FEATURE_COLUMNS}
+    with pytest.raises(ValueError, match="Exactly 16 canonical features"):
+        service.predict_classifier({key: value for key, value in values.items() if key != "Area"})
+    values["Area"] = float("nan")
+    with pytest.raises(ValueError, match="finite numeric"):
+        service.predict_classifier(values)

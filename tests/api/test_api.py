@@ -101,3 +101,13 @@ def test_public_demo_is_read_only(monkeypatch, tmp_path) -> None:
         response = client.post("/api/v1/experiments", json={"name": "Blocked"})
         assert response.status_code == 403
         assert response.json()["error"]["code"] == "demo_read_only"
+        inference = client.post("/api/v1/classifier/predict", json={})
+        assert inference.status_code == 422
+        assert inference.json()["error"]["code"] == "validation_error"
+        oversized = client.post(
+            "/api/v1/classifier/predict",
+            content=b"{}",
+            headers={"content-length": "32769", "content-type": "application/json"},
+        )
+        assert oversized.status_code == 413
+        assert oversized.json()["error"]["code"] == "payload_too_large"

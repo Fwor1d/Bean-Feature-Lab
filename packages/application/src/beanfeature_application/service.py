@@ -77,7 +77,7 @@ class ApplicationService:
             raise RuntimeError("Deployment infrastructure is unavailable")
         run = self.get_run(3)
         result = self.get_run_result(3)
-        if run.display_id != "RUN-000003" or result is None:
+        if run.display_id != "RUN-000003" or result is None or not self.verify_run(3)["verified"]:
             raise ConflictError("RUN-000003 must be completed with a verified result")
         config = self.get_experiment(run.experiment_id).configuration
         if (
@@ -111,13 +111,31 @@ class ApplicationService:
         )
         pipeline = build_pipeline(condition).set_params(**chosen)
         pipeline.fit(dataset.features, dataset.target)
+        observed_ranges = {
+            name: {
+                "minimum": float(dataset.features[name].min()),
+                "maximum": float(dataset.features[name].max()),
+            }
+            for name in dataset.feature_names
+        }
         metadata: dict[str, object] = {
             "model_id": "lr-uci-602-full16-v1",
+            "model_version": "1.0.0",
             "model_family": "Logistic Regression",
+            "estimator_identifier": config.model.value,
             "source_run": run.display_id,
+            "source_result_sha256": run.result_sha256,
+            "source_configuration": asdict(config),
             "dataset_id": 602,
             "dataset_sha256": dataset.arff_sha256,
+            "dataset_version": manifest["dataset_version"],
+            "training_rows": len(dataset.target),
             "feature_names": list(dataset.feature_names),
+            "feature_schema": [
+                {"name": name, "dtype": "numeric", **observed_ranges[name]}
+                for name in dataset.feature_names
+            ],
+            "observed_ranges": observed_ranges,
             "classes": [str(value) for value in pipeline.classes_],
             "training_timestamp_utc": datetime.now(UTC).isoformat(),
             "selected_parameters": chosen,
@@ -132,11 +150,21 @@ class ApplicationService:
     def classifier_info(self) -> dict[str, object] | None:
         return self.deployment_models.metadata() if self.deployment_models else None
 
-    def classifier_example(self) -> dict[str, float]:
+    def classifier_example(self) -> dict[str, object]:
         if not self.dataset_store:
             raise RuntimeError("Dataset infrastructure is unavailable")
         dataset, _ = self.dataset_store.load()
-        return {name: float(dataset.features.iloc[0][name]) for name in dataset.feature_names}
+        row_index = 0
+        return {
+            "source": "UCI Dry Bean Dataset 602",
+            "row_index": row_index,
+            "features": {
+                name: float(dataset.features.iloc[row_index][name])
+                for name in dataset.feature_names
+            },
+            "actual_class": str(dataset.target[row_index]),
+            "note": "The actual class is display-only and is never passed to the model input.",
+        }
 
     def predict_classifier(self, features: dict[str, object]) -> dict[str, object]:
         if not self.deployment_models:

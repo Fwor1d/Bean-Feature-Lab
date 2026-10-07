@@ -114,6 +114,7 @@ export interface DatasetQuality {
 
 export interface ClassifierModel {
   model_id: string;
+  model_version?: string;
   model_family: string;
   source_run: string;
   dataset_id: number;
@@ -122,6 +123,18 @@ export interface ClassifierModel {
   classes: string[];
   training_timestamp_utc: string;
   deployment_model: true;
+  deployment_status?: "ACTIVE" | "INACTIVE";
+  active?: boolean;
+  artifact_sha256?: string;
+  observed_ranges?: Record<string, { minimum: number; maximum: number }>;
+  note: string;
+}
+
+export interface ClassifierExample {
+  source: string;
+  row_index: number;
+  features: Record<string, number>;
+  actual_class: string;
   note: string;
 }
 
@@ -291,5 +304,5 @@ export interface CoreSufficiency {
 }
 
 export interface ApiErrorBody {
-  error: { code: "validation_error" | "invalid_configuration" | "not_found" | "conflict" | "persistence_error" | "demo_read_only"; message: string };
+  error: { code: "validation_error" | "invalid_configuration" | "invalid_request" | "not_found" | "conflict" | "persistence_error" | "demo_read_only" | "payload_too_large"; message: string };
 }
