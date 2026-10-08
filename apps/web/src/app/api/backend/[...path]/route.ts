@@ -9,7 +9,7 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
     return NextResponse.json({ error: { code: "not_found", message: "API route not found" } }, { status: 404 });
   }
   try {
-    const response = await fetch(`${internalApi}/${path.join("/")}`, {
+    const response = await fetch(`${internalApi}/${path.join("/")}${request.nextUrl.search}`, {
       method: request.method,
       headers: request.method === "POST" ? { "Content-Type": "application/json" } : undefined,
       body: request.method === "POST" ? await request.text() : undefined,

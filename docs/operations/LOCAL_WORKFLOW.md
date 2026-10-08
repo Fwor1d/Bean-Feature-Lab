@@ -191,3 +191,33 @@ Focused tests use real subprocess groups and HTTP endpoints with an isolated hea
 Python: `.venv/bin/pytest -q`, `.venv/bin/ruff check .`, `.venv/bin/ruff format --check .`, `.venv/bin/alembic check`.
 
 Frontend, from `apps/web`: `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`. Finish with `git diff --check` and inspect tracked files for runtime state or secrets.
+
+## Conference Mode and verified evidence snapshots
+
+Open `/conference` after `make presentation`. The eight guided sections use one verified
+Core cohort; switching sections does not rerun training or verification. Use Previous/Next,
+Left/Right, Home/End, or the section chooser. Keyboard navigation leaves inputs and menus
+alone. Fullscreen is optional; browser refusal leaves the ordinary presentation usable.
+PCA components and L1 observed fold sparsity are separate from fixed original-feature budgets.
+
+The API builds a read-only snapshot from the earliest completed run per condition, excluding
+smoke, failed and Extended runs. It verifies artifacts and baseline configuration/outer-fold
+compatibility. A failed selected artifact is an explicit error, never a hidden fallback.
+Incomplete comparison families cannot declare a formal minimum sufficient-k. Git/software
+provenance differences do not themselves invalidate compatible scientific evidence.
+
+`GET /api/v1/reports/core/cohorts` lists supported cohorts; select explicitly when several
+exist. `GET /api/v1/reports/core/snapshot?cohort_id=...` builds or reuses verified evidence.
+`GET /api/v1/reports/core/{snapshot_id}/evidence` reads that exact snapshot. These endpoints
+never write scientific metadata or artifacts. Snapshot hashes identify scientific content,
+not PDF bytes or generation timestamps.
+
+Set `BEANFEATURE_REPORT_SNAPSHOT_TTL_SECONDS` before starting the API/presentation to change
+the default two-hour lifetime (allowed range: 60–86400 seconds). Cache is process-local,
+limited to four snapshots of at most 8 MiB each. Identical requests coalesce; only one builder
+runs at a time. Busy requests receive HTTP 503 with Retry-After. Recent or leased snapshots
+are protected from eviction. Conference Mode touches the current snapshot while open;
+activity does not silently extend its fixed expiration. Expired IDs return HTTP 410.
+The presenter explicitly creates a new verified snapshot, retaining the current section.
+API restart also loses snapshots. Dataset and completed results remain in their existing
+runtime locations; no migration or new experiment is involved.

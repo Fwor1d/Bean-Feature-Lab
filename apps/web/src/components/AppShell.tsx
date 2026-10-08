@@ -25,6 +25,7 @@ const navGroups = [
   { label: "Анализ", items: [
     { href: "/features", label: "Анализ признаков", icon: IconTable },
     { href: "/compare", label: "Сравнение", icon: IconChartBar },
+    { href: "/conference", label: "Научный доклад", icon: IconPlayerPlay },
   ] },
   { label: "Применение", items: [
     { href: "/classifier", label: "Классификатор", icon: IconFlask },
@@ -76,6 +77,7 @@ export function AppShell({ children, datasets, runs }: { children: React.ReactNo
   const pathname = usePathname();
   const selectedRun = runs?.find(run => pathname === `/runs/${run.id}`);
   const detailId = pathname.match(/^\/runs\/(\d+)$/)?.[1];
+  if (pathname === "/conference") return <ThemeProvider theme={theme}><CssBaseline />{children}</ThemeProvider>;
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />

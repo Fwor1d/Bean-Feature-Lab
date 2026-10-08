@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.exc import SQLAlchemyError
 
+from beanfeature_application.reporting import ReportError, SnapshotCache, cohorts
 from beanfeature_application.service import ApplicationService, ConflictError, NotFoundError
 from beanfeature_infrastructure.bootstrap import Container, create_container
 from beanfeature_research.contracts import ModelId
@@ -63,6 +64,9 @@ def create_app(database_url: str | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         application.state.container = create_container(database_url)
+        application.state.report_snapshots = SnapshotCache(
+            ttl_seconds=int(os.getenv("BEANFEATURE_REPORT_SNAPSHOT_TTL_SECONDS", "7200"))
+        )
         logger.info("api.start version=0.1.0")
         yield
         application.state.container.metadata.engine.dispose()
@@ -137,6 +141,30 @@ def create_app(database_url: str | None = None) -> FastAPI:
             },
             headers={"Cache-Control": "no-store"},
         )
+
+    @application.exception_handler(ReportError)
+    async def report_error(_request: Request, exc: ReportError) -> JSONResponse:
+        response = error_response(exc.code, str(exc), exc.status)
+        response.headers["Cache-Control"] = "no-store"
+        if exc.status == 503:
+            response.headers["Retry-After"] = "5"
+        return response
+
+    @application.get("/api/v1/reports/core/cohorts")
+    def report_cohorts(service: Service):
+        return cohorts(service)
+
+    @application.get("/api/v1/reports/core/snapshot")
+    def report_snapshot(service: Service, request: Request, cohort_id: str):
+        if len(cohort_id) != 64 or any(c not in "0123456789abcdef" for c in cohort_id):
+            raise ReportError("invalid_cohort", "Некорректный cohort ID.", 422)
+        payload = request.app.state.report_snapshots.snapshot(service, cohort_id)
+        return JSONResponse(payload, headers={"Cache-Control": "no-store"})
+
+    @application.get("/api/v1/reports/core/{snapshot_id}/evidence")
+    def report_evidence(request: Request, snapshot_id: str):
+        with request.app.state.report_snapshots.lease(snapshot_id) as payload:
+            return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
     @application.get("/api/v1/system/info", response_model=SystemInfoResponse)
     def system_info(service: Service):
