@@ -14,6 +14,29 @@ Run all commands from the repository root. Runtime data, SQLite and scientific/m
 
 The frozen scientific specification is [EXPERIMENT_PROTOCOL.md](../research/EXPERIMENT_PROTOCOL.md). Comparison decisions apply only to matching data and split hashes. PCA remains a representation of all 16 measured features, and L1 records varying observed sparsity rather than an invented fixed-k curve.
 
+### Frozen outer split execution
+
+Full-protocol execution consumes the `splits` manifest already preserved inside the earliest
+completed result for the exact validated dataset hash/version and seed. Selection is independent
+of model, selector, budget and measured score. The source artifact/fingerprint/configuration and
+summary are verified; all 15 ordered fold identities, row indices/order, SHA-256, stratification,
+disjoint train/test partitions and per-repeat coverage are validated before training. New result
+artifacts record `outer_split_manifest_source` with the source run ID and result SHA-256.
+
+Missing, corrupt or incompatible required evidence fails explicitly. A damaged selected source
+does not select a later run or regenerate splits. Reproduction also checks its original split-set
+against this frozen source. Restore the trusted source artifact/runtime if it is unavailable;
+do not run a splitter and substitute its output. A dataset/seed without an existing compatible
+full-protocol manifest cannot start a full-protocol run through this workflow. First-cohort
+manifest authoring is outside this focused preservation correction. Integration smoke retains
+its separate 2-fold behavior and cannot supply the 15-fold Core manifest.
+
+Historical completed artifacts and fingerprints are not rewritten. Inner CV still uses the
+recorded seed and unchanged fold-local 4-fold splitter. Persisting the actual future inner
+partitions is feasible by materializing the splits passed to GridSearchCV, but requires an
+explicit relative-index/checksum/artifact-verification contract; it is deferred separately.
+Historical missing inner indices remain unavailable and are never reconstructed as observations.
+
 ## Runtime preservation and recovery
 
 P1A preserves the existing layout: `storage/sqlite/beanfeature.sqlite`, `data/raw`,

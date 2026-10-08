@@ -297,6 +297,72 @@ def _split_hash(train: np.ndarray, test: np.ndarray) -> str:
     return sha256(payload).hexdigest()
 
 
+def validated_frozen_outer_splits(
+    manifest: object,
+    y: np.ndarray,
+    *,
+    seed: int,
+    dataset_hash: str | None,
+    dataset_version: str | None,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Consume recorded indices; never regenerate a required full-protocol manifest."""
+    if not isinstance(manifest, dict):
+        raise ValueError("Required frozen outer split manifest is missing")
+    if (
+        not dataset_hash
+        or not dataset_version
+        or manifest.get("dataset_hash") != dataset_hash
+        or manifest.get("dataset_version") != dataset_version
+        or type(manifest.get("seed")) is not int
+        or manifest.get("seed") != seed
+        or manifest.get("cv_protocol_version") != CV_PROTOCOL_VERSION
+        or manifest.get("rows") != len(y)
+    ):
+        raise ValueError("Frozen outer split manifest has incompatible dataset/seed/protocol")
+    records = manifest.get("splits")
+    if not isinstance(records, list) or len(records) != 15:
+        raise ValueError("Frozen outer split manifest requires all 15 recorded folds")
+    pairs = []
+    hashes = []
+    _, counts = np.unique(y, return_counts=True)
+    labels = np.unique(y)
+    for index, record in enumerate(records):
+        fold_id = f"r{index // 5 + 1:02d}-f{index % 5 + 1:02d}"
+        if not isinstance(record, dict) or record.get("fold_id") != fold_id:
+            raise ValueError("Frozen outer split manifest has invalid fold identities/order")
+        arrays = []
+        for key in ("train_indices", "test_indices"):
+            values = record.get(key)
+            if (
+                not isinstance(values, list)
+                or not values
+                or any(type(value) is not int or not 0 <= value < len(y) for value in values)
+            ):
+                raise ValueError("Frozen outer split manifest has invalid row indices")
+            arrays.append(np.asarray(values, dtype=np.int64))
+        train, test = arrays
+        combined = np.concatenate(arrays)
+        if len(combined) != len(y) or len(np.unique(combined)) != len(y):
+            raise ValueError("Frozen outer fold must partition every row without overlap")
+        test_counts = np.array([np.count_nonzero(y[test] == label) for label in labels])
+        if np.any(test_counts < counts // 5) or np.any(test_counts > (counts + 4) // 5):
+            raise ValueError("Frozen outer fold is not stratified under the 5-fold protocol")
+        if not len(y) // 5 <= len(test) <= (len(y) + 4) // 5:
+            raise ValueError("Frozen outer fold has an incompatible test/train ratio")
+        digest = _split_hash(train, test)
+        if record.get("split_sha256") != digest:
+            raise ValueError("Frozen outer split indices fail their recorded SHA-256")
+        pairs.append((train, test))
+        hashes.append(digest)
+    for repeat in range(3):
+        tests = np.concatenate([test for _, test in pairs[repeat * 5 : (repeat + 1) * 5]])
+        if len(tests) != len(y) or len(np.unique(tests)) != len(y):
+            raise ValueError("Frozen outer repeat must test every row exactly once")
+    if manifest.get("outer_split_set_sha256") != sha256("".join(hashes).encode()).hexdigest():
+        raise ValueError("Frozen outer split-set SHA-256 is inconsistent")
+    return pairs
+
+
 def _latency(pipeline: Pipeline, X: pd.DataFrame, repeats: int) -> dict[str, object]:
     result: dict[str, object] = {
         "method": "full_pipeline_predict_warmup_median_p95",
@@ -324,6 +390,9 @@ def run_nested_cv(
     y: np.ndarray,
     condition: EngineCondition,
     *,
+    frozen_outer_manifest: dict[str, object] | None = None,
+    dataset_hash: str | None = None,
+    dataset_version: str | None = None,
     on_fold: Callable[[dict[str, object]], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
 ) -> NestedResult:
@@ -339,7 +408,18 @@ def run_nested_cv(
     label_indices = {label: index for index, label in enumerate(labels)}
     encoded = np.array([label_indices[str(label)] for label in y], dtype=np.int64)
     inner_folds = 4 if condition.evaluation_mode == "protocol" else 2
-    split_pairs = outer_splits(encoded, condition.seed, condition.evaluation_mode)
+    if condition.evaluation_mode == "protocol":
+        split_pairs = validated_frozen_outer_splits(
+            frozen_outer_manifest,
+            encoded,
+            seed=condition.seed,
+            dataset_hash=dataset_hash,
+            dataset_version=dataset_version,
+        )
+    else:
+        if frozen_outer_manifest is not None:
+            raise ValueError("Core frozen outer manifest cannot be used for integration smoke")
+        split_pairs = outer_splits(encoded, condition.seed, condition.evaluation_mode)
     folds: list[dict[str, object]] = []
     manifests: list[dict[str, object]] = []
     for index, (train, test) in enumerate(split_pairs):

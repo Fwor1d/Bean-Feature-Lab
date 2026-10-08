@@ -8,6 +8,12 @@ The UX reviewer supplied confirmed findings but reached an execution usage limit
 writing its final report; the coordinator completed the affected browser checks. That
 interruption is a coverage limitation, not an independent fourth final approval.
 
+Follow-up after `50d171d`: A-1 is corrected by consuming and validating the existing recorded
+outer manifest during future full-protocol execution. The implementation and failure behavior
+are described in [Frozen outer split execution](LOCAL_WORKFLOW.md#frozen-outer-split-execution).
+The original findings below describe the audit checkpoint; A-2 remains an explicit historical
+limitation. This correction does not alter the frozen protocol or historical result artifacts.
+
 ## Findings and disposition
 
 All entries below have **Confirmed** confidence. No Critical finding or current incorrect

@@ -17,7 +17,7 @@ from beanfeature_research.contracts import (
     PCARepresentation,
     SelectorId,
 )
-from beanfeature_research.dataset import dataset_quality_summary
+from beanfeature_research.dataset import ValidatedDataset, dataset_quality_summary
 from beanfeature_research.engine import (
     CV_PROTOCOL_VERSION,
     SMOKE_PROTOCOL_VERSION,
@@ -28,6 +28,7 @@ from beanfeature_research.engine import (
     paired_comparison,
     preset_search_space,
     run_nested_cv,
+    validated_frozen_outer_splits,
 )
 
 from .contracts import (
@@ -707,6 +708,65 @@ class ApplicationService:
     def recover_interrupted_runs(self) -> int:
         return self.runs.recover_running()
 
+    def resolve_frozen_outer_manifest(
+        self, configuration: ExperimentConfig, dataset: ValidatedDataset
+    ) -> dict[str, object]:
+        """Use the earliest compatible completed artifact as the existing frozen manifest."""
+        if configuration.evaluation_mode != "protocol":
+            raise ValueError("Frozen outer manifest requires full protocol configuration")
+        for source in sorted(self.list_runs(), key=lambda r: (r.finished_at or r.created_at, r.id)):
+            if source.status.value != "COMPLETED":
+                continue
+            config = self.get_experiment(source.experiment_id).configuration
+            if (
+                config.evaluation_mode != "protocol"
+                or config.dataset_version != configuration.dataset_version
+                or config.seed != configuration.seed
+                or source.dataset_hash != dataset.arff_sha256
+            ):
+                continue
+            # A damaged selected source must fail, never fall back to another completed run.
+            payload = self._comparison_payload(source.id)
+            summary = payload["summary"]
+            if summary.get("seed") != config.seed or summary.get("evaluation_mode") != "protocol":
+                raise ValueError("Frozen outer source summary differs from its configuration")
+            manifest = {
+                "dataset_hash": payload["dataset_manifest"]["arff_sha256"],
+                "dataset_version": payload["dataset_manifest"]["dataset_version"],
+                "rows": payload["dataset_manifest"].get("rows"),
+                "seed": payload["configuration"]["seed"],
+                "cv_protocol_version": summary["cv_protocol_version"],
+                "outer_split_set_sha256": summary["outer_split_set_sha256"],
+                "splits": payload.get("splits"),
+                "source_run_id": source.display_id,
+                "source_result_sha256": source.result_sha256,
+            }
+            validated_frozen_outer_splits(
+                manifest,
+                dataset.target,
+                seed=configuration.seed,
+                dataset_hash=dataset.arff_sha256,
+                dataset_version=configuration.dataset_version,
+            )
+            if [(record["fold_id"], record["split_sha256"]) for record in manifest["splits"]] != [
+                (fold["fold_id"], fold["split_sha256"]) for fold in payload["folds"]
+            ]:
+                raise ValueError("Frozen outer manifest differs from verified source folds")
+            if configuration.reproduces_run_id:
+                source_id = int(configuration.reproduces_run_id.removeprefix("RUN-"))
+                self._comparison_protocol(source.id, source_id)
+                reproduced = self._comparison_payload(source_id)
+                if (
+                    self.get_run(source_id).dataset_hash != dataset.arff_sha256
+                    or reproduced["summary"]["outer_split_set_sha256"]
+                    != manifest["outer_split_set_sha256"]
+                ):
+                    raise ValueError("Reproduction source differs from frozen outer manifest")
+            return manifest
+        raise ValueError(
+            "Required frozen outer split manifest is missing for dataset/seed/protocol"
+        )
+
     def process_next_run(self, *, should_stop: Callable[[], bool] | None = None) -> Run | None:
         run = self.runs.claim_next()
         if run is None:
@@ -726,6 +786,11 @@ class ApplicationService:
                 raise ValueError(
                     "Experiment dataset version is absent or differs from validated UCI 602"
                 )
+            frozen_outer = (
+                self.resolve_frozen_outer_manifest(config, dataset)
+                if config.evaluation_mode == "protocol"
+                else None
+            )
             condition = EngineCondition(
                 model=ModelId(config.model),
                 selector=SelectorId(config.selector),
@@ -752,6 +817,9 @@ class ApplicationService:
                 dataset.features,
                 dataset.target,
                 condition,
+                frozen_outer_manifest=frozen_outer,
+                dataset_hash=dataset.arff_sha256,
+                dataset_version=config.dataset_version,
                 on_fold=lambda fold: self.artifacts.write_json(
                     f"{run.display_id}/fold-{fold['fold_id']}.json", fold
                 ),
@@ -779,6 +847,10 @@ class ApplicationService:
                 "folds": result.folds,
                 "splits": result.splits,
             }
+            if frozen_outer is not None:
+                payload["outer_split_manifest_source"] = {
+                    key: frozen_outer[key] for key in ("source_run_id", "source_result_sha256")
+                }
             path = f"{run.display_id}/result.json"
             digest = self.artifacts.write_json(path, payload)
             verified = self.artifacts.read_json(path, digest)
