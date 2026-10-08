@@ -50,3 +50,13 @@ def test_missing_runtime_file_returns_safe_error(api_client, monkeypatch):
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "artifact_unavailable"
     assert "/Users/" not in response.text
+
+
+def test_body_limit_errors_keep_allowed_browser_cors(api_client):
+    response = api_client.post(
+        "/api/v1/classifier/predict",
+        content=iter([b" " * 20_000, b" " * 20_000]),
+        headers={"Content-Type": "application/json", "Origin": "http://localhost:3000"},
+    )
+    assert response.status_code == 413
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"

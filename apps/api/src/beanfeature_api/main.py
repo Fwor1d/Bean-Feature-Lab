@@ -99,6 +99,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
         "BEANFEATURE_CORS_ORIGINS",
         "http://localhost:3000,http://127.0.0.1:3000",
     ).split(",")
+    application.add_middleware(PredictionBodyLimit)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=[origin.strip() for origin in origins if origin.strip()],
@@ -106,7 +107,6 @@ def create_app(database_url: str | None = None) -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
-    application.add_middleware(PredictionBodyLimit)
 
     @application.exception_handler(OSError)
     async def file_unavailable(_request: Request, exc: OSError) -> JSONResponse:

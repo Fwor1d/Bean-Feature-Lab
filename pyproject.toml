@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "beanfeature-lab"
-version = "0.1.0"
-description = "Local research application foundation for Dry Bean feature-budget experiments"
+version = "1.0.0"
+description = "Scientific workbench for verified Dry Bean feature-budget research"
 requires-python = ">=3.11,<3.12"
 dependencies = [
   "fastapi>=0.115,<1",

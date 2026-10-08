@@ -29,63 +29,31 @@ flowchart LR
 ## Реализованные границы репозитория
 
 ```text
-BeanFeatureLab/
-├── PRODUCT.md
-├── apps/
-│   ├── web/                         # Next.js, TypeScript, Node.js 24 LTS
-│   │   ├── src/app/                 # маршруты страниц
-│   │   ├── src/features/            # сценарии страниц и запросы к API
-│   │   ├── src/components/          # композиция готовых UI-компонентов
-│   │   ├── src/lib/api/             # типизированный HTTP-клиент и DTO
-│   │   └── src/lib/plots/           # адаптация готовых серий к Plotly
-│   ├── api/                         # FastAPI, Python 3.11
-│   │   └── src/beanfeature_api/
-│   │       ├── main.py              # сборка приложения и DI
-│   │       ├── routers/             # тонкие HTTP-адаптеры по доменам
-│   │       └── schemas/             # внешние request/response DTO
-│   └── worker/                      # один локальный исполнитель долгих runs
-├── packages/
-│   ├── research/                    # научное ядро, без API/UI/SQLite
-│   │   └── src/beanfeature_research/
-│   │       ├── datasets/            # схема, загрузка и научная валидация
-│   │       ├── splits/              # outer/inner CV и split manifests
-│   │       ├── preprocessing/       # fold-local pipeline builders
-│   │       ├── selection/           # фильтры, RFE, embedded, PCA
-│   │       ├── models/              # фабрики классификаторов и search spaces
-│   │       ├── evaluation/          # predictions, метрики, агрегация
-│   │       ├── stability/           # частоты выбора и Jaccard
-│   │       └── resources/           # измерение wall time, RSS, размера
-│   ├── application/
-│   │   └── src/beanfeature_application/
-│   │       ├── commands/            # запуск, отмена, регистрация модели
-│   │       ├── queries/             # чтение сохранённых сравнений
-│   │       ├── ports/               # интерфейсы repo/artifact/job
-│   │       └── policies/            # статусы, идентичность, права операций
-│   └── infrastructure/
-│       └── src/beanfeature_infrastructure/
-│           ├── sqlite/              # репозитории и миграции
-│           ├── files/               # manifests, datasets, model artifacts
-│           └── jobs/                # сменяемый адаптер локального worker
-├── tools/cli/                      # воспроизводимые команды поверх application
-├── configs/experiments/            # версионируемые шаблоны протокола
-├── data/
-│   ├── raw/                        # неизменяемые копии источников и hashes
-│   └── processed/                  # проверенные версии данных и manifests
-├── storage/sqlite/                 # локальная metadata/results DB (runtime, ignored)
-├── artifacts/
-│   ├── runs/                       # snapshots, predictions, logs по run ID
-│   └── models/                     # доверенные обученные модели
-├── tests/
-│   ├── research/                   # leakage, CV, метрики, устойчивость
-│   ├── application/                # lifecycle и идемпотентность
-│   ├── api/                        # HTTP-контракты
-│   ├── cli/                        # запуск без UI
-│   └── web/                        # доступность и сценарии страниц
-└── docs/
-    ├── architecture/ARCHITECTURE.md
-    └── research/
-        ├── EXPERIMENT_PROTOCOL.md
-        └── Влияние_количества_признаков_семян_фасоли_на_точность_их_классификации.docx
+apps/web/src/                     # app/, components/, lib/api/, science, theme
+apps/api/src/beanfeature_api/     # main.py, schemas.py, body_limit.py
+apps/worker/src/beanfeature_worker/main.py
+packages/research/src/beanfeature_research/
+  contracts.py, dataset.py, engine.py
+packages/application/src/beanfeature_application/
+  contracts.py, service.py, reporting.py, runtime.py
+packages/infrastructure/src/beanfeature_infrastructure/
+  bootstrap.py, database.py, repositories.py, metadata.py
+  datasets.py, files.py, deployment.py, resources.py, benchmark.py
+  runtime.py, reports.py
+packages/infrastructure/alembic/  # committed migrations
+scripts/presentation.py           # local lifecycle and probes
+scripts/presentation*.sh         # existing mode entry points
+tools/cli/src/beanfeature_cli/main.py
+configs/experiments/              # frozen versioned definitions
+data/{raw,processed}/            # runtime dataset and manifest
+storage/sqlite/                   # runtime metadata DB
+storage/backups/                  # runtime portability packages
+storage/presentation/             # bounded logs and session identities
+artifacts/{runs,models}/          # immutable scientific/deployment artifacts
+tests/{research,application,infrastructure,api,cli}/
+tests/test_presentation.py        # real process/lifecycle regression checks
+apps/web/src/**/*.test.ts*        # frontend contract/state tests
+docs/                            # authoritative methodology and operations
 ```
 
 `data/processed` содержит воспроизводимый manifest проверки официального ARFF, но не обучаемые на всей выборке preprocessing statistics. Масштабирование, feature selection, PCA и любая статистика, зависящая от training data, создаются внутри CV pipeline. Raw/processed dataset files, runtime SQLite и generated artifacts исключены из Git; hashes и provenance сохраняются рядом с научным результатом.
@@ -130,9 +98,11 @@ Run проходит состояния `DRAFT/QUEUED → RUNNING → COMPLETED`
 
 ## Реализованные product surfaces
 
-Маршруты `/`, `/experiments`, `/runs`, `/runs/[id]`, `/feature-budget`, `/features`, `/compare`, `/classifier` и `/settings` используют один typed client и сохранённые API-сущности. Feature Budget строит линии только для полностью рассчитанных `1…16` series; заранее разреженные comparator control points и partial series остаются отдельными измеренными markers. Original-feature и PCA representations фильтруются и подписываются раздельно. Run detail является reproducibility report и экспортирует JSON/CSV/Markdown без автоматической генерации научных выводов. Compare разделяет formal sufficient-k и описательное A-vs-B сравнение без решения о победителе. Classifier применяет только active registered pipeline. При отсутствии результатов страницы показывают loading/error/partial/`not calculated`, а не случайные данные.
+Маршруты `/`, `/experiments`, `/runs`, `/runs/[id]`, `/feature-budget`, `/features`, `/compare`, `/classifier`, `/conference` и `/settings` используют один typed client и сохранённые API-сущности. Feature Budget строит линии только для полностью рассчитанных `1…16` series; заранее разреженные comparator control points и partial series остаются отдельными измеренными markers. Original-feature и PCA representations фильтруются и подписываются раздельно. Run detail является reproducibility report и экспортирует JSON/CSV/Markdown без автоматической генерации научных выводов. Compare разделяет formal sufficient-k и описательное A-vs-B сравнение без решения о победителе. Classifier применяет только active registered pipeline. При отсутствии результатов страницы показывают loading/error/partial/`not calculated`, а не случайные данные.
 
-Поздние Experiment Registry, Pareto Analysis, Conference Mode, расширенные сравнения, ручная ablation и генерация отчёта добавляются как новые application queries/commands и UI-маршруты поверх сохранённых fold results и artifacts. Они не требуют переноса ML-логики в API или frontend. Ручная ablation создаёт новую версионируемую experiment definition и честный run, а не изменяет сохранённые научные результаты.
+Conference Mode и PDF используют общий read-only reporting snapshot: детерминированный earliest-completed отбор, проверку artifacts/configuration и полные sufficient-k семьи. Process-local bounded cache с leases, coalescing и двухчасовым TTL не сохраняет новый scientific state. ReportLab/Matplotlib adapter формирует PDF из этого снимка; frontend не вычисляет научные решения. Runtime backup/restore и presentation lifecycle описаны в operations.
+
+Pareto analysis, дополнительные сравнения и ручная ablation могут добавляться как новые application queries/commands поверх сохранённых fold results и artifacts. Они не требуют переноса ML-логики в API или frontend. Ручная ablation создаёт новую версионируемую experiment definition и честный run, а не изменяет сохранённые научные результаты.
 
 ## Утверждённый React UI stack
 
@@ -158,4 +128,4 @@ Run проходит состояния `DRAFT/QUEUED → RUNNING → COMPLETED`
 
 ## Зафиксированные решения и открытые границы
 
-Метод corrected repeated-CV interval, Bonferroni family, margin `0.01`, search spaces, comparator points, resource measurement profile и classifier deployment boundary зафиксированы до соответствующих вычислений. Public hosting работает как локальный Mac-hosted read-only surface: classifier prediction разрешён как bounded side-effect-free inference, scientific writes заблокированы. Независимый подтверждающий dataset, отдельная честная процедура выбора «лучшей» model/selector family, calibration research, Pareto analysis и Conference Mode остаются явно вне текущего Core; их отсутствие не подменяется выводами из уже просмотренных outer-CV curves.
+Метод corrected repeated-CV interval, Bonferroni family, margin `0.01`, search spaces, comparator points, resource measurement profile и classifier deployment boundary зафиксированы до соответствующих вычислений. Public hosting работает как локальный Mac-hosted read-only surface: classifier prediction разрешён как bounded side-effect-free inference, scientific writes заблокированы. Независимый подтверждающий dataset, отдельная честная процедура выбора «лучшей» model/selector family, calibration research, Pareto analysis остаются явно вне текущего Core; их отсутствие не подменяется выводами из уже просмотренных outer-CV curves.

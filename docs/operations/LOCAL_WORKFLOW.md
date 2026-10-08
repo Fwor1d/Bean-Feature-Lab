@@ -262,3 +262,31 @@ For validation, use the existing `make presentation`, verify local/API/proxy/pub
 responses, then `make presentation-stop`. Extract text and inspect rendered PDF pages,
 including fonts, chart labels, tables and source identities; a successful HTTP response
 alone is not a visual or scientific check. Read-only Alembic checking remains applicable.
+
+## Release 1.0 demonstration checklist
+
+Russian presenter instructions and accurate committee answers are in
+[CONFERENCE_NOTES_RU.md](CONFERENCE_NOTES_RU.md); the acceptance matrix and explicit
+release limitations are in [RELEASE_1_0.md](RELEASE_1_0.md). Start with a drained queue,
+verify readiness, open Conference Mode and download its verified PDF before the talk.
+Do not run classifier training, dataset validation, reproduce or enqueue merely for a demo.
+The classifier is an inference example; changing input clears its prior result. Predictions
+and history do not write the scientific DB. CSV/JSON/Markdown downloads from run details
+verify the artifact and announce errors; only applicable exports are offered.
+
+Classifier POST requests are bounded to 32 KiB by actual received bytes at API and proxy,
+including chunked bodies without Content-Length. Invalid/nonfinite inputs or invalid model
+probabilities fail safely. Runtime file errors return a generic 503 without local paths.
+Public read-only policy remains necessary; this is not a general authentication/rate-limit
+service, and it is not intended to receive untrusted model archives.
+
+For schema consistency without migration or live DB writes, use:
+
+```sh
+BEANFEATURE_DATABASE_URL='sqlite:///file:storage/sqlite/beanfeature.sqlite?mode=ro&uri=true' .venv/bin/alembic check
+```
+
+A fresh installation has no scientific runtime results. `make setup` installs dependencies
+and explicitly applies migrations; presentation startup only checks schema. Restore from
+a trusted package before expecting historical results/model availability. Keep a copy on
+an independent device or trusted storage: a backup on the same Mac does not cover its loss.

@@ -1,4 +1,4 @@
-# BeanFeature Lab
+# BeanFeature Lab 1.0
 
 BeanFeature Lab is a local research workbench for measuring how the number of original Dry Bean morphological features affects multiclass classification. The scientific engine runs outside HTTP requests; the Instrument Workstation UI reads real saved results through typed API contracts.
 
@@ -13,7 +13,9 @@ BeanFeature Lab is a local research workbench for measuring how the number of or
 - `make migrate` applies subsequent Alembic migrations. Defaults are SQLite at `storage/sqlite/beanfeature.sqlite`, API at `127.0.0.1:8000`, and web at `127.0.0.1:3000`. Optional overrides are described in `.env.example`; do not commit a real `.env`.
 - `make api`, `make worker`, and `make web` run in separate terminals. `make test`, `make lint`, `make format`, `make typecheck`, and `make build` cover the developer workflow.
 
-For a hosted local session, run **`make presentation`** from the repository root. It applies migrations and starts FastAPI, one local worker and production Next.js; the configured macOS Cloudflare Named Tunnel serves [beanfeature.fwor1d.ru](https://beanfeature.fwor1d.ru) and `api.fwor1d.ru`. Browser requests use the public API, while Next.js server-side requests use the local API. The Mac must remain on and connected to the internet. **`make presentation-quick`** is the emergency Quick Tunnel fallback. Only one mode can use ports 3000/8000 at a time. Public mode permits reads and the bounded, side-effect-free classifier prediction POST; experiment creation, enqueue, cancel and other writes return HTTP 403. Local CLI and worker remain unrestricted. Ctrl+C stops only app processes launched by the command. Cloudflare credentials and secrets must never enter the repository or UI logs.
+For a hosted local session, run **`make presentation`** from the repository root. It checks the existing schema read-only and starts FastAPI, one local worker and production Next.js; the configured macOS Cloudflare Named Tunnel serves [beanfeature.fwor1d.ru](https://beanfeature.fwor1d.ru) and `api.fwor1d.ru`. Browser requests use the public API or the same-origin proxy; Next.js server-side requests use the local API. The Mac must remain on and connected to the internet. **`make presentation-quick`** is the emergency Quick Tunnel fallback. Only one mode can use ports 3000/8000 at a time. Public mode permits reads and the bounded, side-effect-free classifier prediction POST; experiment creation, enqueue, cancel and other writes return HTTP 403. Local CLI and worker remain unrestricted. Use `make presentation-status` for readiness and `make presentation-stop` or Ctrl+C for owned-process shutdown. Presentation mode owns temporary macOS sleep assertions; keep the Mac open and powered. The externally managed Named Tunnel remains running. Cloudflare credentials and secrets must never enter the repository or UI logs.
+
+Results are runtime state: a fresh checkout does not contain the dataset, runs or deployment model. Restore a trusted verified package into a **new** compatible environment using the [runtime recovery workflow](docs/operations/LOCAL_WORKFLOW.md#runtime-preservation-and-recovery). Keep an independent off-device backup.
 
 ## Reproducible scientific execution
 
@@ -98,7 +100,13 @@ Scaling, selection/PCA, hyperparameter search and fitting occur inside the relev
 - `/features` — canonical features, data quality, selection frequency/stability and correlation context.
 - `/compare` — formal compact-vs-baseline sufficiency and a separate descriptive A-vs-B view on identical outer folds.
 - `/classifier` — active deployment model, UCI examples, probabilities and session-only history.
+- `/conference` — eight scientific sections sharing one verified evidence snapshot with downloadable PDF.
+- `/settings` — operational availability and software provenance.
 
 Runtime datasets, SQLite state, models and scientific artifacts are intentionally ignored by Git. Versioned protocol/configuration files and migrations are committed; reported numbers must remain traceable to verified runtime artifacts.
 
-Operational details: [local research, reproduction, classifier and hosting](docs/operations/LOCAL_WORKFLOW.md). The [bounded Core UI audit](docs/design/CORE_AUDIT.md) records verified fixes and remaining coverage limits.
+Operational details: [local research, reproduction, classifier and hosting](docs/operations/LOCAL_WORKFLOW.md). See the [release acceptance record](docs/operations/RELEASE_1_0.md), [interface review](docs/design/RELEASE_AUDIT.md) and Russian [speaker notes](docs/operations/CONFERENCE_NOTES_RU.md).
+
+Conference Mode uses an explicit verified cohort, a default two-hour snapshot and the frozen sufficient-k method. On the final step, download the PDF of that exact snapshot. Expiration/API restart requires explicit renewal; no different evidence is silently substituted. PDF includes embedded Cyrillic fonts, tables, figures and source identities and remains readable offline. Public scientific writes stay prohibited.
+
+Release scope includes the completed Core, runtime recovery, managed local presentation, Conference Mode and PDF. External validation, Extended selectors, calibration, Pareto/ablation research, exhaustive accessibility certification and missing historical measurements are documented limitations rather than fabricated evidence. Public uptime still depends on the Mac and network.
