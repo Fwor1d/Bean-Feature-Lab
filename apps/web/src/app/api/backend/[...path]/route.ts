@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isAllowedBackendPath } from "@/lib/api/proxy-policy";
+import { isAllowedBackendPath } from "../../../../lib/api/proxy-policy";
 
 const internalApi = process.env.BEANFEATURE_INTERNAL_API_BASE_URL ?? "http://127.0.0.1:8000";
 
@@ -18,7 +18,11 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
     const headers = new Headers({ "Content-Type": response.headers.get("Content-Type") ?? "application/json" });
     const disposition = response.headers.get("Content-Disposition");
     if (disposition) headers.set("Content-Disposition", disposition);
-    return new NextResponse(await response.text(), {
+    for (const name of ["Cache-Control", "Retry-After", "X-Evidence-SHA256"]) {
+      const value = response.headers.get(name);
+      if (value) headers.set(name, value);
+    }
+    return new NextResponse(await response.arrayBuffer(), {
       status: response.status,
       headers,
     });

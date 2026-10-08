@@ -32,3 +32,25 @@ export function presentationStep(hash: string): number {
 export function acceptsNavigation(event: { key: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean }, target: HTMLElement | null): boolean {
   return ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey && !target?.closest("input,textarea,select,button,[role=combobox],[role=listbox],[role=menu],[contenteditable=true]");
 }
+
+/** Download stays bound to the visible evidence, including after cache expiry. */
+export async function reportPDF(snapshot: Pick<CoreSnapshot, "snapshot_id" | "evidence_sha256">): Promise<{ blob: Blob; filename: string }> {
+  try {
+    const response = await fetch(`${reportsBase}/${encodeURIComponent(snapshot.snapshot_id)}/pdf`, { cache: "no-store" });
+    if (!response.ok) {
+      const body = await response.json();
+      throw new ReportRequestError(body.error?.code ?? "pdf_failed", body.error?.message ?? "Не удалось скачать PDF. Повторите запрос.");
+    }
+    if (response.headers.get("Content-Type")?.split(";")[0] !== "application/pdf" || response.headers.get("X-Evidence-SHA256") !== snapshot.evidence_sha256) {
+      throw new ReportRequestError("invalid_pdf", "PDF не соответствует показанному снимку. Повторите запрос.");
+    }
+    const blob = await response.blob();
+    if (blob.size > 10 * 1024 * 1024 || !new TextDecoder().decode(await blob.slice(0, 5).arrayBuffer()).startsWith("%PDF-")) {
+      throw new ReportRequestError("invalid_pdf", "Получен некорректный PDF. Повторите запрос.");
+    }
+    return { blob, filename: `BeanFeatureLab-${snapshot.evidence_sha256.slice(0, 16)}.pdf` };
+  } catch (error) {
+    if (error instanceof ReportRequestError) throw error;
+    throw new ReportRequestError("api_unavailable", "API недоступен. Проверьте подключение и повторите запрос.");
+  }
+}

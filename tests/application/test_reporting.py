@@ -215,3 +215,28 @@ def test_expiration_and_active_snapshot_protection(monkeypatch):
 def test_invalid_configuration(ttl):
     with pytest.raises(ValueError):
         reports.SnapshotCache(ttl_seconds=ttl)
+
+
+def test_saved_diagnostics_are_descriptive_and_missing_is_not_zero():
+    service = EvidenceService([1, 16])
+    service.payloads[1]["dataset_manifest"] = {"classes": ["SEKER", "DERMASON"]}
+    for f in service.payloads[1]["folds"]:
+        f.update(
+            per_class_recall={"DERMASON": 0.7, "SEKER": 0.8}, confusion_matrix=[[7, 3], [2, 8]]
+        )
+    result = build(service)["baseline_diagnostics"]["RUN-000001"]
+    assert result["labels"] == ["DERMASON", "SEKER"]
+    assert result["confusion_matrix_sum"] == [[105, 45], [30, 120]]
+    assert result["per_class_recall_fold_mean"] == {"DERMASON": 0.7, "SEKER": 0.8}
+    del service.payloads[1]["folds"][0]["per_class_recall"]
+    assert build(service)["baseline_diagnostics"]["RUN-000001"] == {"status": "UNAVAILABLE"}
+
+
+def test_complete_family_without_passing_budget_is_calculated_not_missing():
+    service = EvidenceService()
+    for f in service.payloads[1]["folds"]:
+        f["macro_f1"] = 0.99
+    result = build(service)["sufficiency"][0]
+    assert result["status"] == "CALCULATED" and result["calculated_comparisons"] == 15
+    assert result["minimal_sufficient_k"] is None
+    assert all(c["decision"] == "not_sufficient" for c in result["comparisons"])

@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from beanfeature_application.reporting import ReportError, SnapshotCache, cohorts
 from beanfeature_application.service import ApplicationService, ConflictError, NotFoundError
 from beanfeature_infrastructure.bootstrap import Container, create_container
+from beanfeature_infrastructure.reports import PDFReports
 from beanfeature_research.contracts import ModelId
 
 from .schemas import (
@@ -67,8 +68,10 @@ def create_app(database_url: str | None = None) -> FastAPI:
         application.state.report_snapshots = SnapshotCache(
             ttl_seconds=int(os.getenv("BEANFEATURE_REPORT_SNAPSHOT_TTL_SECONDS", "7200"))
         )
+        application.state.pdf_reports = PDFReports()
         logger.info("api.start version=0.1.0")
         yield
+        application.state.pdf_reports.close()
         application.state.container.metadata.engine.dispose()
         logger.info("api.stop")
 
@@ -165,6 +168,29 @@ def create_app(database_url: str | None = None) -> FastAPI:
     def report_evidence(request: Request, snapshot_id: str):
         with request.app.state.report_snapshots.lease(snapshot_id) as payload:
             return JSONResponse(payload, headers={"Cache-Control": "no-store"})
+
+    @application.get("/api/v1/reports/core/{snapshot_id}/pdf")
+    def report_pdf(request: Request, snapshot_id: str):
+        with request.app.state.report_snapshots.lease(snapshot_id) as payload:
+            try:
+                output = request.app.state.pdf_reports.render(payload)
+            except ReportError:
+                raise
+            except Exception as exc:
+                logger.error("report.render_failed error_type=%s", type(exc).__name__)
+                raise ReportError(
+                    "pdf_failed", "Не удалось сформировать PDF. Повторите запрос.", 503
+                ) from exc
+            filename = "BeanFeatureLab-" + payload["evidence_sha256"][:16] + ".pdf"
+            return Response(
+                output,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Cache-Control": "no-store",
+                    "X-Evidence-SHA256": payload["evidence_sha256"],
+                },
+            )
 
     @application.get("/api/v1/system/info", response_model=SystemInfoResponse)
     def system_info(service: Service):

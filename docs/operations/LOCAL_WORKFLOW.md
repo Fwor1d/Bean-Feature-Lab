@@ -221,3 +221,44 @@ activity does not silently extend its fixed expiration. Expired IDs return HTTP 
 The presenter explicitly creates a new verified snapshot, retaining the current section.
 API restart also loses snapshots. Dataset and completed results remain in their existing
 runtime locations; no migration or new experiment is involved.
+
+### Scientific PDF reports
+
+On the final Conference Mode step, **Скачать научный PDF** downloads a report of the
+currently displayed evidence snapshot. The public-safe GET endpoint is
+`/api/v1/reports/core/{snapshot_id}/pdf`; the Next.js proxy preserves PDF bytes and
+attachment headers. A missing/expired snapshot returns 410. Explicitly create a new
+verified snapshot to continue; the current presentation step remains selected.
+Export never silently substitutes evidence, retrains, or changes run metadata.
+
+The PDF includes dataset/protocol identity, actual MI curves, full-feature baselines,
+corrected sufficient-k families, comparator tables, a separate PCA branch, limitations,
+software/Git provenance and an appendix of selected run IDs, result SHA-256 hashes and
+configuration fingerprints. Baseline per-class recall and confusion counts are descriptive
+aggregations of recorded outer folds. The confusion matrix sums 15 folds: each observation
+occurs in three repeats, so these are not counts of unique independent observations.
+Unavailable diagnostics remain unavailable. The minimum sufficient-k requires all 15
+compatible paired comparisons. Neither a best-metric run nor an alternative to a failed
+selected artifact is substituted.
+
+ReportLab Platypus handles pagination/tables; Matplotlib Agg renders actual saved results.
+Both install through `make setup` / `pip install -e '.[dev]'`. DejaVu Sans, Bold and Mono
+fonts come from Matplotlib's installed package and are embedded with Unicode mappings;
+no incidental macOS font is required. Matplotlib distributes their license as
+`mpl-data/fonts/ttf/LICENSE_DEJAVU` (Bitstream Vera terms and public-domain DejaVu changes).
+The renderer uses the font files directly, including figure labels. Its transient font
+cache is released on API shutdown; reports/logs are not written into scientific storage.
+
+PDF generation is coalesced per snapshot, limited to one concurrent renderer and two
+cached outputs (at most 10 MiB each). Different simultaneous exports return a retryable
+503 with `Retry-After`; the document also has a 40-page safety bound. An active export
+holds its snapshot lease throughout rendering, even if the TTL elapses during that request.
+API process restart loses snapshots/PDF cache. Generation timestamp, renderer versions/source SHA-256
+and evidence hash are recorded. Scientific evidence reproducibility does **not** promise
+byte-identical PDFs across regeneration or installations. Existing CSV/JSON run exports
+remain available for machine-readable reproduction.
+
+For validation, use the existing `make presentation`, verify local/API/proxy/public PDF
+responses, then `make presentation-stop`. Extract text and inspect rendered PDF pages,
+including fonts, chart labels, tables and source identities; a successful HTTP response
+alone is not a visual or scientific check. Read-only Alembic checking remains applicable.

@@ -9,6 +9,7 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from statistics import mean
 from threading import Lock, Semaphore
 from uuid import uuid4
 
@@ -244,24 +245,63 @@ def build_snapshot(service: ApplicationService, cohort_id: str) -> dict:
     registered = next((d for d in service.list_datasets() if d["source_id"] == 602), None)
     if not registered:
         raise ReportError("dataset_missing", "Официальный dataset не зарегистрирован.")
+    baseline_diagnostics = {}
+    for run, config, payload in loaded:
+        if config.selector is not SelectorId.NONE:
+            continue
+        labels = (
+            sorted(payload["dataset_manifest"]["classes"]) if "dataset_manifest" in payload else []
+        )
+        folds = payload["folds"]
+        recalls = [f.get("per_class_recall") for f in folds]
+        matrices = [f.get("confusion_matrix") for f in folds]
+        if (
+            not labels
+            or any(
+                not isinstance(r, dict)
+                or set(r) != set(labels)
+                or any(
+                    not isinstance(v, (int, float)) or not math.isfinite(v) or not 0 <= v <= 1
+                    for v in r.values()
+                )
+                for r in recalls
+            )
+            or any(
+                not isinstance(m, list)
+                or len(m) != len(labels)
+                or any(
+                    not isinstance(row, list)
+                    or len(row) != len(labels)
+                    or any(not isinstance(v, int) or v < 0 for v in row)
+                    for row in m
+                )
+                for m in matrices
+            )
+        ):
+            baseline_diagnostics[run.display_id] = {"status": "UNAVAILABLE"}
+            continue
+        baseline_diagnostics[run.display_id] = {
+            "status": "CALCULATED",
+            "labels": labels,
+            "per_class_recall_fold_mean": {
+                label: mean(r[label] for r in recalls) for label in labels
+            },
+            "confusion_matrix_sum": [
+                [sum(m[i][j] for m in matrices) for j in range(len(labels))]
+                for i in range(len(labels))
+            ],
+            "note": (
+                "Descriptive aggregation of saved 15 folds; "
+                "each observation occurs in three repeats"
+            ),
+        }
     manifest = service.get_dataset_manifest(registered["id"])
     quality = service.dataset_quality(registered["id"])
     if manifest["arff_sha256"] != cohort["dataset_sha256"]:
         raise ReportError("dataset_mismatch", "Доступный dataset не соответствует результатам.")
     if before != inventory(service):
         raise ReportError("evidence_changed", "Научные данные изменились. Создайте новый снимок.")
-    protocol = {
-        "version": CV_PROTOCOL_VERSION,
-        "outer_splits": 5,
-        "outer_repeats": 3,
-        "inner_splits": 4,
-        "primary_metric": "Macro-F1",
-        "margin": SUFFICIENCY_MARGIN,
-        "family_alpha": SUFFICIENCY_FAMILY_ALPHA,
-        "comparisons_per_model": SUFFICIENCY_COMPARISONS,
-        "method": SUFFICIENCY_INTERVAL_VERSION,
-        "reference": "docs/research/EXPERIMENT_PROTOCOL.md",
-    }
+    protocol = report_protocol()
     evidence = {
         "format_version": "core-report-v1",
         "cohort": cohort,
@@ -270,6 +310,7 @@ def build_snapshot(service: ApplicationService, cohort_id: str) -> dict:
         "protocol": protocol,
         "runs": records,
         "sufficiency": sufficiency,
+        "baseline_diagnostics": baseline_diagnostics,
         "excluded": excluded,
         "selection": "earliest completed per condition; full protocol; no metric selection",
     }
@@ -282,6 +323,22 @@ def build_snapshot(service: ApplicationService, cohort_id: str) -> dict:
     if len(canonical(body)) > MAX_SNAPSHOT_BYTES:
         raise ReportError("evidence_size", "Снимок превышает допустимый размер.")
     return body
+
+
+def report_protocol() -> dict:
+    """The frozen protocol shared by scientific presentation and PDF adapters."""
+    return {
+        "version": CV_PROTOCOL_VERSION,
+        "outer_splits": 5,
+        "outer_repeats": 3,
+        "inner_splits": 4,
+        "primary_metric": "Macro-F1",
+        "margin": SUFFICIENCY_MARGIN,
+        "family_alpha": SUFFICIENCY_FAMILY_ALPHA,
+        "comparisons_per_model": SUFFICIENCY_COMPARISONS,
+        "method": SUFFICIENCY_INTERVAL_VERSION,
+        "reference": "docs/research/EXPERIMENT_PROTOCOL.md",
+    }
 
 
 @dataclass
