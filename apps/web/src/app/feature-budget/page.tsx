@@ -99,6 +99,7 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
   return <>
     <h1 className="page-heading">Бюджет признаков</h1>
     <p className="page-question">Как меняется Macro-F1 при сокращении числа исходных измеряемых признаков? Каждая точка — завершённое условие полного nested CV; отсутствующие k не интерполируются.</p>
+    <p className="table-note">Обзорная серия — сохранённые сводки SQLite; целостность файлов для её точек при открытии повторно не проверяется. Baseline и sufficient-k проверяются отдельно. Для проверенного снимка всех условий используйте <Link href="/conference">Conference Mode</Link> и PDF.</p>
     {error && <Alert severity="warning" sx={{ mb: 2 }}>{error} <Link href="/feature-budget">Повторить запрос</Link></Alert>}
     {pca && <Alert severity="info" sx={{ mb: 2 }}>PCA — отдельное представление: число компонент не равно числу физических измерений. Даже 1 component требует все 16 исходных измерений.</Alert>}
     {cohortEntries.length > 1 && <Alert severity="info" sx={{ mb: 2 }}>

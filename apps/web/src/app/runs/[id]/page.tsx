@@ -6,6 +6,7 @@ import { FoldGrid } from "@/components/FoldGrid";
 import { api, apiErrorMessage, ApiError } from "@/lib/api/client";
 import type { Experiment, FoldResult, Run, RunDetail, RunResources, RunSummary, RunVerification } from "@/lib/api/contracts";
 import { metric, modelLabel, runLabel, selectorLabel, utcTime } from "@/lib/science";
+import { selectFold } from "@/lib/view-selection";
 
 const shortHash = (value: string) => <code title={value}>{value}</code>;
 
@@ -34,7 +35,7 @@ export default async function RunDetailPage({ params, searchParams }: {
     if (caught instanceof ApiError && caught.status === 404) notFound();
     error = apiErrorMessage(caught);
   }
-  const selected = folds.find(item => item.fold_id === requestedFold) ?? folds[0];
+  const selected = selectFold(folds, requestedFold);
   const config = experiment?.configuration;
   const scientific = summary?.summary;
   const classes = detail?.dataset_manifest.classes ?? [];
@@ -42,6 +43,7 @@ export default async function RunDetailPage({ params, searchParams }: {
     <p className="breadcrumb"><Link href="/runs">Запуски</Link> / {run?.display_id ?? `#${id}`}</p>
     <h1 className="page-heading">{run?.display_id ?? "Детали запуска"}</h1>
     {error && <Alert severity="warning" sx={{ mb: 2 }}>{error} <Link href={`/runs/${id}`}>Повторить запрос</Link></Alert>}
+    {!error && requestedFold !== undefined && !selected && <Alert severity="info" sx={{ mb: 2 }}>Запрошенный fold недоступен. Выберите существующий fold в таблице или <Link href={`/runs/${id}`}>сбросьте выбор</Link>.</Alert>}
     {run && <>
       <p className="page-question">{experiment?.name ?? `Эксперимент #${run.experiment_id}`} · {config ? modelLabel[config.model] : "Модель не найдена"} · {config ? selectorLabel[config.selector] : "Метод не найден"}</p>
       <div className="status-line" style={{ marginBottom: 16 }}><Chip label={runLabel[run.status]} size="small" color={run.status === "COMPLETED" ? "success" : run.status === "FAILED" ? "error" : "default"} variant="outlined" />

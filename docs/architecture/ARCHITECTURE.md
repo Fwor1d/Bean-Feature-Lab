@@ -1,6 +1,6 @@
 # Архитектура BeanFeature Lab
 
-Статус: production-oriented локальная архитектура реализована. Leakage-safe engine, application/infrastructure boundaries, SQLite queue, filesystem artifacts, API/CLI/worker, deployment registry и Instrument Workstation UI работают на официальном UCI 602. Источники продуктовых ограничений — [`PRODUCT.md`](../../PRODUCT.md), [`EXPERIMENT_PROTOCOL.md`](../research/EXPERIMENT_PROTOCOL.md) и [исходный научный доклад](../research/Влияние_количества_признаков_семян_фасоли_на_точность_их_классификации.docx). Числовые выводы не фиксируются в этом документе: они читаются из hash-verified runtime artifacts.
+Статус: production-oriented локальная архитектура реализована. Leakage-safe engine, application/infrastructure boundaries, SQLite queue, filesystem artifacts, API/CLI/worker, deployment registry и Instrument Workstation UI работают на официальном UCI 602. Источники продуктовых ограничений — [`PRODUCT.md`](../../PRODUCT.md), [`EXPERIMENT_PROTOCOL.md`](../research/EXPERIMENT_PROTOCOL.md) и [исходный научный доклад](../research/Влияние_количества_признаков_семян_фасоли_на_точность_их_классификации.docx). Числовые выводы не фиксируются в этом документе: formal comparisons, Conference Mode и PDF проверяют runtime artifacts; обзорные budget/selection series читают сохранённые SQLite summaries без повторной проверки каждого файла и обозначают это в UI.
 
 ## Границы системы
 

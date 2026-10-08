@@ -26,6 +26,8 @@ body { font-family: "Golos Text", Arial, sans-serif; }
 .context-copy { color: #c4cdd5; font-size: 12px; line-height: 1.5; margin: 9px 0 0; }
 .context-panel .MuiInputBase-input.Mui-disabled { -webkit-text-fill-color: #b8c5d1; }
 .context-panel .MuiInputLabel-root.Mui-disabled, .context-panel .MuiSvgIcon-root.Mui-disabled { color: #b8c5d1; }
+.context-panel .MuiInputLabel-root.Mui-focused { color: #9dc0ff; }
+.context-panel .MuiOutlinedInput-root.Mui-focused fieldset { border-color: #9dc0ff; }
 .context-panel .MuiOutlinedInput-root.Mui-disabled fieldset { border-color: #5d6b79; }
 .page-heading { font-size: 24px; font-weight: 700; line-height: 1.3; margin: 0 0 7px; color: #182533; }
 .page-question { color: #526170; font-size: 14px; margin: 0 0 18px; max-width: 78ch; }

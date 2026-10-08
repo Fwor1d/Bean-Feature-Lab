@@ -5,6 +5,10 @@ The completed Core, P1A recovery, P1B lifecycle, Conference Mode and PDF are inc
 This is a release candidate on `build/core-completion`; no merge or public uptime guarantee
 is implied. Git holds software and frozen methodology, not the valuable runtime evidence.
 
+The subsequent [independent four-role verification](INDEPENDENT_RELEASE_1_0.md) records
+additional reproduced defects, corrections and acceptance evidence. The counts below describe
+this initial acceptance checkpoint, rather than replacing that follow-up verification.
+
 ## Focused completion audit and fixes
 
 | Category | Finding | Resolution |

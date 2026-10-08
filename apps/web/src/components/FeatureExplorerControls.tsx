@@ -4,6 +4,7 @@ import { FormControl, InputLabel, MenuItem, Select } from "@mui/material";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ModelId, SelectorId } from "@/lib/api/contracts";
 import { modelLabel, selectorLabel } from "@/lib/science";
+import { featureFilterParams } from "@/lib/view-selection";
 
 export function FeatureExplorerControls({ models, selectors, budgets, selected }: {
   models: ModelId[];
@@ -14,8 +15,7 @@ export function FeatureExplorerControls({ models, selectors, budgets, selected }
   const router = useRouter();
   const search = useSearchParams();
   const set = (key: string, value: string) => {
-    const params = new URLSearchParams(search.toString());
-    params.set(key, value);
+    const params = featureFilterParams(search.toString(), key, value);
     router.push(`/features?${params.toString()}`);
   };
   return <div className="action-row" aria-label="Условие анализа признаков">

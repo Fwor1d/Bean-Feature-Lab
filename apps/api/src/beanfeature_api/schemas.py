@@ -217,7 +217,14 @@ class RunResponse(BaseModel):
             created_at=run.created_at,
             started_at=run.started_at,
             finished_at=run.finished_at,
-            error=run.error,
+            error=(
+                "Исполнение отменено."
+                if run.status is RunStatus.CANCELLED
+                else "Исполнение завершилось с ошибкой. "
+                "Подробности доступны в локальной диагностике."
+            )
+            if run.error
+            else None,
             metrics={
                 "macro_f1_mean": float(run.summary["macro_f1_mean"]),
                 "accuracy_mean": float(run.summary["accuracy_mean"]),

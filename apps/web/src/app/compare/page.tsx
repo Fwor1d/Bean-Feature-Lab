@@ -5,6 +5,7 @@ import { DescriptiveComparisonSelector, type DescriptiveRunOption } from "@/comp
 import { api, ApiError, apiErrorMessage } from "@/lib/api/client";
 import type { DescriptiveComparison, PairedComparison, Run, RunSummary, ScientificSummary } from "@/lib/api/contracts";
 import { metric, modelLabel, selectorLabel } from "@/lib/science";
+import { sameRequestedRun } from "@/lib/view-selection";
 
 interface CompareParams {
   view?: string;
@@ -53,7 +54,7 @@ async function DescriptiveView({ params }: { params: CompareParams }) {
     });
     const requestedLeft = options.find(option => option.id === Number(params.left));
     const requestedRight = options.find(option => option.id === Number(params.right));
-    if ((params.left && !requestedLeft) || (params.right && !requestedRight) || (params.left && params.left === params.right)) throw new ApiError(422, "unsupported_comparison", "Выбранная пара недоступна. Откройте сравнение заново и выберите два завершённых условия.");
+    if ((params.left && !requestedLeft) || (params.right && !requestedRight) || sameRequestedRun(params.left, params.right)) throw new ApiError(422, "unsupported_comparison", "Выбранная пара недоступна. Откройте сравнение заново и выберите два завершённых условия.");
     const left = requestedLeft ?? options[0];
     const right = requestedRight && requestedRight.id !== left?.id
       ? requestedRight

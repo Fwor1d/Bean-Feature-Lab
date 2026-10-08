@@ -197,9 +197,15 @@ class ApplicationService:
         values: dict[str, float] = {}
         for name in names:
             raw = features[name]
-            if isinstance(raw, bool) or not isinstance(raw, (float, int)) or not math.isfinite(raw):
+            if isinstance(raw, bool) or not isinstance(raw, (float, int)):
                 raise ValueError(f"{name} must be a finite numeric value")
-            values[name] = float(raw)
+            try:
+                value = float(raw)
+            except OverflowError as exc:
+                raise ValueError(f"{name} must be a finite numeric value") from exc
+            if not math.isfinite(value):
+                raise ValueError(f"{name} must be a finite numeric value")
+            values[name] = value
         frame = pd.DataFrame([values], columns=names)
         predicted = str(pipeline.predict(frame)[0])
         probabilities = pipeline.predict_proba(frame)[0]

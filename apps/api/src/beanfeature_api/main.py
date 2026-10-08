@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from importlib.metadata import version
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, Request, status
+from fastapi import Depends, FastAPI, Path, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -54,6 +54,7 @@ def get_service(container: Annotated[Container, Depends(get_container)]) -> Appl
 
 Service = Annotated[ApplicationService, Depends(get_service)]
 ContainerDep = Annotated[Container, Depends(get_container)]
+DatabaseId = Annotated[int, Path(ge=1, le=2**63 - 1)]
 
 
 def error_response(code: str, message: str, http_status: int) -> JSONResponse:
@@ -217,11 +218,11 @@ def create_app(database_url: str | None = None) -> FastAPI:
         return [DatasetResponse.model_validate(item) for item in service.list_datasets()]
 
     @application.get("/api/v1/datasets/{dataset_id}/manifest")
-    def dataset_manifest(dataset_id: int, service: Service):
+    def dataset_manifest(dataset_id: DatabaseId, service: Service):
         return service.get_dataset_manifest(dataset_id)
 
     @application.get("/api/v1/datasets/{dataset_id}/quality", response_model=DatasetQualityResponse)
-    def dataset_quality(dataset_id: int, service: Service) -> DatasetQualityResponse:
+    def dataset_quality(dataset_id: DatabaseId, service: Service) -> DatasetQualityResponse:
         return DatasetQualityResponse.model_validate(service.dataset_quality(dataset_id))
 
     @application.get("/api/v1/classifier/model", response_model=DeploymentModelResponse)
@@ -260,7 +261,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
         return ExperimentResponse.from_domain(created)
 
     @application.get("/api/v1/experiments/{experiment_id}", response_model=ExperimentResponse)
-    def get_experiment(experiment_id: int, service: Service) -> ExperimentResponse:
+    def get_experiment(experiment_id: DatabaseId, service: Service) -> ExperimentResponse:
         return ExperimentResponse.from_domain(service.get_experiment(experiment_id))
 
     @application.get("/api/v1/runs", response_model=list[RunResponse])
@@ -272,15 +273,15 @@ def create_app(database_url: str | None = None) -> FastAPI:
         response_model=RunResponse,
         status_code=status.HTTP_201_CREATED,
     )
-    def create_run(experiment_id: int, service: Service) -> RunResponse:
+    def create_run(experiment_id: DatabaseId, service: Service) -> RunResponse:
         return RunResponse.from_domain(service.create_run(experiment_id))
 
     @application.get("/api/v1/runs/{run_id}", response_model=RunResponse)
-    def get_run(run_id: int, service: Service) -> RunResponse:
+    def get_run(run_id: DatabaseId, service: Service) -> RunResponse:
         return RunResponse.from_domain(service.get_run(run_id))
 
     @application.get("/api/v1/runs/{run_id}/summary", response_model=RunSummaryResponse)
-    def run_summary(run_id: int, service: Service) -> RunSummaryResponse:
+    def run_summary(run_id: DatabaseId, service: Service) -> RunSummaryResponse:
         run = service.get_run(run_id)
         return RunSummaryResponse(
             run_id=run.display_id,
@@ -292,23 +293,23 @@ def create_app(database_url: str | None = None) -> FastAPI:
         )
 
     @application.get("/api/v1/runs/{run_id}/detail")
-    def run_detail(run_id: int, service: Service):
+    def run_detail(run_id: DatabaseId, service: Service):
         result = service.get_run_detail(run_id)
         if result is None:
             return error_response("not_calculated", "Scientific result is not available", 409)
         return result
 
     @application.get("/api/v1/runs/{run_id}/verify")
-    def verify_run(run_id: int, service: Service):
+    def verify_run(run_id: DatabaseId, service: Service):
         return service.verify_run(run_id)
 
     @application.get("/api/v1/runs/{run_id}/resources", response_model=RunResourcesResponse)
-    def run_resources(run_id: int, service: Service) -> RunResourcesResponse:
+    def run_resources(run_id: DatabaseId, service: Service) -> RunResourcesResponse:
         return RunResourcesResponse.model_validate(service.run_resources(run_id))
 
     @application.get("/api/v1/runs/{run_id}/export/{export_kind}")
     def export_run(
-        run_id: int,
+        run_id: DatabaseId,
         export_kind: Literal[
             "result.json",
             "config.json",
@@ -326,14 +327,14 @@ def create_app(database_url: str | None = None) -> FastAPI:
         )
 
     @application.get("/api/v1/runs/{run_id}/folds", response_model=list[FoldResultResponse])
-    def run_folds(run_id: int, service: Service):
+    def run_folds(run_id: DatabaseId, service: Service):
         result = service.get_run_result(run_id)
         if result is None:
             return error_response("not_calculated", "Scientific result is not available", 409)
         return [FoldResultResponse.model_validate(fold) for fold in result["folds"]]
 
     @application.get("/api/v1/runs/{run_id}/stability")
-    def run_stability(run_id: int, service: Service):
+    def run_stability(run_id: DatabaseId, service: Service):
         result = service.get_run_result(run_id)
         if result is None:
             return error_response("not_calculated", "Scientific result is not available", 409)
@@ -343,11 +344,13 @@ def create_app(database_url: str | None = None) -> FastAPI:
         }
 
     @application.get("/api/v1/runs/{run_id}/paired-comparison/{baseline_run_id}")
-    def run_paired_comparison(run_id: int, baseline_run_id: int, service: Service):
+    def run_paired_comparison(run_id: DatabaseId, baseline_run_id: DatabaseId, service: Service):
         return service.compare_runs(run_id, baseline_run_id)
 
     @application.get("/api/v1/runs/{left_run_id}/descriptive-comparison/{right_run_id}")
-    def run_descriptive_comparison(left_run_id: int, right_run_id: int, service: Service):
+    def run_descriptive_comparison(
+        left_run_id: DatabaseId, right_run_id: DatabaseId, service: Service
+    ):
         return service.compare_runs_descriptively(left_run_id, right_run_id)
 
     @application.get(
@@ -382,7 +385,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
         return CoreSufficiencyResponse.model_validate(service.core_sufficiency(model))
 
     @application.post("/api/v1/runs/{run_id}/cancel", response_model=RunResponse)
-    def cancel_run(run_id: int, service: Service) -> RunResponse:
+    def cancel_run(run_id: DatabaseId, service: Service) -> RunResponse:
         return RunResponse.from_domain(service.cancel_run(run_id))
 
     return application

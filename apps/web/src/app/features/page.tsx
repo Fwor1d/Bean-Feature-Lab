@@ -5,6 +5,7 @@ import { FeatureSelectionHeatmap } from "@/components/FeatureSelectionHeatmap";
 import { api, apiErrorMessage } from "@/lib/api/client";
 import type { DatasetManifest, DatasetQuality, FeatureSelectionPoint, ModelId, SelectorId } from "@/lib/api/contracts";
 import { expectedBudgetConditions, metric, modelLabel, selectorLabel } from "@/lib/science";
+import { selectFeatureCondition } from "@/lib/view-selection";
 
 type Query = { model?: string; selector?: string; k?: string };
 
@@ -22,10 +23,8 @@ export default async function FeaturesPage({ searchParams }: { searchParams: Pro
     ]);
   } catch (caught) { error = apiErrorMessage(caught); }
   const validSeries = manifest ? selectionSeries.filter(point => point.dataset_hash === manifest!.arff_sha256) : [];
-  const requested = validSeries.find(point => point.model === query.model && point.selector === query.selector && point.k_original_features === Number(query.k));
-  const preferred = validSeries.find(point => point.model === "logistic_regression" && point.selector === "mutual_information" && point.k_original_features === 14);
-  const modelFallback = validSeries.filter(point => !query.model || point.model === query.model).filter(point => !query.selector || point.selector === query.selector).sort((a, b) => b.k_original_features - a.k_original_features)[0];
-  const selected = requested ?? (query.model || query.selector ? modelFallback : preferred) ?? modelFallback ?? validSeries[0] ?? null;
+  const selected = selectFeatureCondition(validSeries, query);
+  const unavailable = !error && [query.model, query.selector, query.k].some(value => value !== undefined) && !selected;
   const frequency = selected?.selection_frequency;
   const sourceRunId = selected ? Number(selected.run_id.slice(4)) : null;
   const models = [...new Set(validSeries.map(point => point.model))].sort() as ModelId[];
@@ -40,6 +39,7 @@ export default async function FeaturesPage({ searchParams }: { searchParams: Pro
     <h1 className="page-heading">Датасет и признаки</h1>
     <p className="page-question">Проверенный официальный ARFF UCI 602. Канонические имена сохранены; частоты отбора ниже относятся только к конкретному завершённому run.</p>
     {error && <Alert severity="warning" sx={{ mb: 2 }}>{error}</Alert>}
+    {unavailable && <Alert severity="info" sx={{ mb: 2 }}>Выбранное условие недоступно. Частоты отбора не рассчитаны для этого сочетания модели, метода и бюджета. <Link href="/features">Сбросить фильтры</Link></Alert>}
     {manifest ? <>
       <section className="section-surface" aria-labelledby="dataset-title">
         <h2 id="dataset-title" className="section-title">{manifest.source} · ID {manifest.source_id}</h2>
@@ -69,9 +69,10 @@ export default async function FeaturesPage({ searchParams }: { searchParams: Pro
         <div className="table-heading"><h2 id="features-title">Исходные признаки</h2><span className="table-note">Имена строго из официального ARFF · без переименования</span></div>
         {selected && <FeatureExplorerControls models={models} selectors={selectors} budgets={budgets} selected={{ model: selected.model, selector: selected.selector, k: selected.k_original_features }} />}
         {frequency && sourceRunId && <p className="empty-copy">Условие: {modelLabel[selected!.model]} · {selectorLabel[selected!.selector]} · k={selected!.k_original_features}. Частоты из <Link href={`/runs/${sourceRunId}`}>{selected!.run_id}</Link> · {selected!.outer_fold_count} outer folds; mean pairwise Jaccard {metric(selected!.pairwise_jaccard_mean)}. Это устойчивость отбора, не causal importance.</p>}
+        <p className="table-note">Обзорные частоты — сохранённые сводки SQLite. Целостность файлов при открытии этой серии повторно не проверяется; проверка доступна в деталях запуска. Conference Mode и PDF используют проверенный снимок.</p>
         <Table size="small" aria-label="Канонические имена признаков"><TableHead><TableRow><TableCell>№</TableCell><TableCell>Исходный атрибут</TableCell><TableCell align="right">Наблюдаемый диапазон</TableCell><TableCell align="right">Экстремальные</TableCell><TableCell align="right">Впервые при k</TableCell><TableCell align="right">Частота отбора</TableCell></TableRow></TableHead><TableBody>{manifest.features.map((name, index) => {
           const stats = quality?.feature_statistics[name];
-          return <TableRow key={name}><TableCell>{index + 1}</TableCell><TableCell>{name}</TableCell><TableCell align="right">{stats ? `${stats.minimum.toLocaleString("ru-RU")} … ${stats.maximum.toLocaleString("ru-RU")}` : "Не рассчитано"}</TableCell><TableCell align="right">{stats?.extreme_outlier_count ?? "Не рассчитано"}</TableCell><TableCell align="right">{firstSelectedBudget.get(name) ?? "не выбран"}</TableCell><TableCell align="right">{frequency ? metric(frequency[name], 2) : "Не рассчитано"}</TableCell></TableRow>;
+          return <TableRow key={name}><TableCell>{index + 1}</TableCell><TableCell>{name}</TableCell><TableCell align="right">{stats ? `${stats.minimum.toLocaleString("ru-RU")} … ${stats.maximum.toLocaleString("ru-RU")}` : "Не рассчитано"}</TableCell><TableCell align="right">{stats?.extreme_outlier_count ?? "Не рассчитано"}</TableCell><TableCell align="right">{selected ? firstSelectedBudget.get(name) ?? "не выбран" : "Не рассчитано"}</TableCell><TableCell align="right">{frequency ? metric(frequency[name], 2) : "Не рассчитано"}</TableCell></TableRow>;
         })}</TableBody></Table>
       </section>
       {selected && heatmapPoints.length > 0 && <section className="figure-surface" aria-labelledby="selection-map-title">

@@ -167,6 +167,14 @@ Runtime PID/state and logs are ignored under `storage/presentation/`. `session.j
 
 Troubleshooting: inspect `make presentation-status`, then its `logs` directory. For `occupied`/unmanaged worker, explicitly stop the identified development process yourself. For schema failure, back up and inspect migrations before `make migrate`. For worker `stale`, inspect `worker.log`; heartbeat proves responsiveness, not completion of queued training. Local ready + public failure means inspect the system tunnel, configured ingress, DNS and connectivity; no scientific state recovery is needed. A locked session with invalid state requires inspecting the owner before repairing local state, never broad `killall` commands. This foreground lifecycle provides local detection and bounded diagnostics, not unattended uptime guarantees or remote control.
 
+A transient SQLite `BUSY`/`LOCKED` heartbeat commit is rolled back by the existing transaction
+and retried after the five-second heartbeat interval. The worker logs a safe
+`worker.heartbeat_busy` warning without a database path. No synthetic timestamp is written.
+Persistent contention still exceeds the existing 20-second freshness deadline and fails the
+presentation; other database errors are not treated as recoverable locks. Public run list/detail
+show a safe failure message; inspect the trusted local run `error.json`/worker log for details.
+Database-backed API path IDs must be positive signed 64-bit integers; malformed IDs return 422.
+
 Public API mode still allows GET endpoints and bounded prediction POST (32 KiB); experiment/run creation, cancellation and other scientific state mutations return HTTP 403. Trusted local CLI workflows retain write access. This boundary is not comprehensive authentication or traffic limiting.
 
 ### P1B validation matrix
