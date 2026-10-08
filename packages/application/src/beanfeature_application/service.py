@@ -207,6 +207,10 @@ class ApplicationService:
         scores = {label: float(score) for label, score in zip(labels, probabilities, strict=True)}
         if labels != metadata["classes"] or predicted not in scores:
             raise ValueError("Deployment model class metadata mismatch")
+        if not all(
+            math.isfinite(score) and 0 <= score <= 1 for score in scores.values()
+        ) or not math.isclose(sum(scores.values()), 1.0, abs_tol=1e-6):
+            raise ValueError("Model probabilities are unavailable for this numeric input")
         local_explanation: dict[str, object] | None = None
         named_steps = getattr(pipeline, "named_steps", None)
         if named_steps and "model" in named_steps:
@@ -849,7 +853,7 @@ class ApplicationService:
             payload = self.get_run_result(run_id)
         except (ValueError, OSError, json.JSONDecodeError) as exc:
             payload = None
-            errors.append(f"artifact_integrity: {exc}")
+            errors.append(f"artifact_integrity: {type(exc).__name__}")
         checks["completed_with_verified_artifact"] = payload is not None
         if payload is None:
             return {
@@ -1241,6 +1245,27 @@ class ApplicationService:
             )
         return points
 
+    def _comparison_payload(self, run_id: int) -> dict[str, object]:
+        if self.get_run(run_id).status.value != "COMPLETED":
+            raise ConflictError("Both runs must be completed before paired comparison")
+        verification = self.verify_run(run_id)
+        if not verification["verified"]:
+            raise ValueError(f"{self.get_run(run_id).display_id}: artifact verification failed")
+        payload = self.get_run_result(run_id)
+        if payload is None or payload["summary"] != self.get_run(run_id).summary:
+            raise ValueError("Run summary differs from its verified artifact")
+        return payload
+
+    def _comparison_protocol(self, left_id: int, right_id: int) -> None:
+        left = self.get_experiment(self.get_run(left_id).experiment_id).configuration
+        right = self.get_experiment(self.get_run(right_id).experiment_id).configuration
+        if (left.dataset_version, left.seed, left.evaluation_mode) != (
+            right.dataset_version,
+            right.seed,
+            right.evaluation_mode,
+        ) or left.evaluation_mode != "protocol":
+            raise ValueError("Paired runs require matching dataset, seed and full CV protocol")
+
     def compare_runs(
         self, compact_run_id: int, baseline_run_id: int, *, persist: bool = False
     ) -> dict[str, object]:
@@ -1249,8 +1274,9 @@ class ApplicationService:
         baseline_run = self.get_run(baseline_run_id)
         if compact_run.dataset_hash != baseline_run.dataset_hash or not compact_run.dataset_hash:
             raise ValueError("Paired runs require the same validated dataset hash")
-        compact_payload = self.get_run_result(compact_run_id)
-        baseline_payload = self.get_run_result(baseline_run_id)
+        self._comparison_protocol(compact_run_id, baseline_run_id)
+        compact_payload = self._comparison_payload(compact_run_id)
+        baseline_payload = self._comparison_payload(baseline_run_id)
         if not compact_payload or not baseline_payload:
             raise ConflictError("Both runs must be completed before paired comparison")
         compact_config = self.get_experiment(compact_run.experiment_id).configuration
@@ -1293,8 +1319,9 @@ class ApplicationService:
         right_run = self.get_run(right_run_id)
         if left_run.dataset_hash != right_run.dataset_hash or not left_run.dataset_hash:
             raise ValueError("Paired runs require the same validated dataset hash")
-        left_payload = self.get_run_result(left_run_id)
-        right_payload = self.get_run_result(right_run_id)
+        self._comparison_protocol(left_run_id, right_run_id)
+        left_payload = self._comparison_payload(left_run_id)
+        right_payload = self._comparison_payload(right_run_id)
         if not left_payload or not right_payload:
             raise ConflictError("Both runs must be completed before paired comparison")
         left = NestedResult(left_payload["folds"], left_payload["summary"], left_payload["splits"])
@@ -1315,7 +1342,7 @@ class ApplicationService:
     def core_sufficiency(self, model: ModelId, *, persist: bool = False) -> dict[str, object]:
         """Evaluate all available Core MI k values against the matching no-selector baseline."""
         completed: list[tuple[Run, ExperimentConfig]] = []
-        for run in self.list_runs():
+        for run in sorted(self.list_runs(), key=lambda r: (r.finished_at or r.created_at, r.id)):
             if run.status.value == "COMPLETED":
                 completed.append((run, self.get_experiment(run.experiment_id).configuration))
         baselines = [
@@ -1366,7 +1393,7 @@ class ApplicationService:
             "outer_split_set_sha256": baseline.summary["outer_split_set_sha256"]
             if baseline.summary
             else None,
-            "minimal_sufficient_k": min(sufficient) if sufficient else None,
+            "minimal_sufficient_k": min(sufficient) if calculated == 15 and sufficient else None,
             "status": "CALCULATED" if calculated == 15 else "PARTIAL",
             "calculated_comparisons": calculated,
             "comparisons": comparisons,

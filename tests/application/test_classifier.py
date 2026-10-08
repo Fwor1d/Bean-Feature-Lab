@@ -109,3 +109,22 @@ def test_logistic_classifier_returns_exact_local_logit_contributions(tmp_path) -
     predicted_index = list(pipeline.classes_).index(result["predicted_class"])
     expected_logit = pipeline.decision_function(pd.DataFrame([values]))[0][predicted_index]
     assert explained_logit == pytest.approx(expected_logit)
+
+
+@pytest.mark.parametrize(
+    "probabilities", [[float("nan")] * 7, [0.5] * 7, [-1.0, 2.0, 0, 0, 0, 0, 0]]
+)
+def test_unusable_model_probabilities_fail_safely(probabilities):
+    from types import SimpleNamespace
+
+    pipeline = SimpleNamespace(
+        classes_=list(CLASSES),
+        predict=lambda frame: [CLASSES[0]],
+        predict_proba=lambda frame: [probabilities],
+    )
+    store = SimpleNamespace(
+        load=lambda: (pipeline, {"feature_names": list(FEATURE_COLUMNS), "classes": list(CLASSES)})
+    )
+    service = ApplicationService(None, None, None, deployment_models=store)
+    with pytest.raises(ValueError, match="probabilities are unavailable"):
+        service.predict_classifier({name: 1.0 for name in FEATURE_COLUMNS})

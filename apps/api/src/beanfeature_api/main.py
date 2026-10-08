@@ -1,6 +1,7 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from importlib.metadata import version
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Request, status
@@ -15,6 +16,7 @@ from beanfeature_infrastructure.bootstrap import Container, create_container
 from beanfeature_infrastructure.reports import PDFReports
 from beanfeature_research.contracts import ModelId
 
+from .body_limit import PredictionBodyLimit
 from .schemas import (
     ClassifierBenchmarkResponse,
     ClassifierExampleResponse,
@@ -69,13 +71,15 @@ def create_app(database_url: str | None = None) -> FastAPI:
             ttl_seconds=int(os.getenv("BEANFEATURE_REPORT_SNAPSHOT_TTL_SECONDS", "7200"))
         )
         application.state.pdf_reports = PDFReports()
-        logger.info("api.start version=0.1.0")
+        logger.info("api.start version=%s", version("beanfeature-lab"))
         yield
         application.state.pdf_reports.close()
         application.state.container.metadata.engine.dispose()
         logger.info("api.stop")
 
-    application = FastAPI(title="BeanFeature Lab API", version="0.1.0", lifespan=lifespan)
+    application = FastAPI(
+        title="BeanFeature Lab API", version=version("beanfeature-lab"), lifespan=lifespan
+    )
     demo_read_only = os.getenv("BEANFEATURE_DEMO_READ_ONLY") == "1"
 
     @application.middleware("http")
@@ -102,6 +106,14 @@ def create_app(database_url: str | None = None) -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
+    application.add_middleware(PredictionBodyLimit)
+
+    @application.exception_handler(OSError)
+    async def file_unavailable(_request: Request, exc: OSError) -> JSONResponse:
+        logger.error("api.file_unavailable type=%s", type(exc).__name__)
+        return error_response(
+            "artifact_unavailable", "Required runtime content is unavailable", 503
+        )
 
     @application.exception_handler(NotFoundError)
     async def not_found(_request: Request, exc: NotFoundError) -> JSONResponse:
