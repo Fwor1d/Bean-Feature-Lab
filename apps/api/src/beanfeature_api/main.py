@@ -125,6 +125,19 @@ def create_app(database_url: str | None = None) -> FastAPI:
             return error_response("persistence_error", "Storage is unavailable", 503)
         return HealthResponse(status="ok")
 
+    @application.get("/ready")
+    def ready(container: ContainerDep):
+        available = container.metadata.presentation_readiness()
+        return JSONResponse(
+            status_code=200 if available else 503,
+            content={
+                "application": "beanfeature-api",
+                "status": "ready" if available else "not_ready",
+                "read_only": demo_read_only,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
     @application.get("/api/v1/system/info", response_model=SystemInfoResponse)
     def system_info(service: Service):
         return service.system_info()

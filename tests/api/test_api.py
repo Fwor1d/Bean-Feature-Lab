@@ -113,3 +113,22 @@ def test_public_demo_is_read_only(monkeypatch, tmp_path) -> None:
         )
         assert oversized.status_code == 413
         assert oversized.json()["error"]["code"] == "payload_too_large"
+
+
+def test_readiness_checks_schema_read_only_without_migration(api_client, monkeypatch) -> None:
+    from sqlalchemy import text
+
+    engine = api_client.app.state.container.metadata.engine
+    ready = api_client.get("/ready")
+    assert ready.status_code == 200
+    assert ready.json() == {"application": "beanfeature-api", "status": "ready", "read_only": False}
+    assert ready.headers["cache-control"] == "no-store"
+    with engine.begin() as connection:
+        connection.execute(text("UPDATE alembic_version SET version_num='future_schema'"))
+    assert api_client.get("/health").status_code == 200
+    assert api_client.get("/ready").status_code == 503
+    with engine.connect() as connection:
+        assert (
+            connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
+            == "future_schema"
+        )

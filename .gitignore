@@ -23,6 +23,7 @@ out/
 storage/sqlite/*.sqlite*
 storage/sqlite/*.db*
 storage/backups/
+storage/presentation/
 artifacts/runs/*
 !artifacts/runs/README.md
 artifacts/models/*

@@ -6,11 +6,12 @@ from hashlib import sha256
 from importlib.metadata import version
 from pathlib import Path
 
+from alembic.script import ScriptDirectory
 from sqlalchemy import select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
-from .database import RunRow, WorkerHeartbeatRow, utc_now
+from .database import Base, RunRow, WorkerHeartbeatRow, utc_now
 
 
 class EnvironmentMetadata:
@@ -40,6 +41,20 @@ class EnvironmentMetadata:
             return "online" if age < 20 else "offline"
         except Exception:
             return "unknown"
+
+    def presentation_readiness(self) -> bool:
+        """Cheap read-only schema check; no migrations, training or artifact rehashing."""
+        try:
+            head = ScriptDirectory(str(Path(__file__).resolve().parents[2] / "alembic"))
+            with self.engine.connect() as connection:
+                revisions = connection.execute(text("SELECT version_num FROM alembic_version"))
+                if revisions.scalars().all() != [head.get_current_head()]:
+                    return False
+                for table in Base.metadata.sorted_tables:
+                    connection.execute(select(table).limit(0))
+            return True
+        except Exception:
+            return False
 
     def system_info(self) -> dict[str, object]:
         git_commit: str | None = None

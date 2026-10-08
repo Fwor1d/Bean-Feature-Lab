@@ -133,13 +133,58 @@ The active registry and metadata live under `artifacts/models/`; they contain mo
 
 `beanfeature classifier benchmark` measures deployment latency/RSS in a fresh process and stores a separate engineering artifact. RSS sampling may miss short peaks; historical scientific runs without memory measurements stay not calculated.
 
-## Hosting
+## Hosting / presentation lifecycle
 
-`make presentation` uses the existing system Cloudflare Named Tunnel and permanent domains. `make presentation-quick` is the emergency Quick Tunnel mode. Use only one mode at a time. Both start the local API, one worker and production web frontend; Ctrl+C stops those application processes without removing scientific state or stopping the system tunnel.
+The Mac is the host: it must stay powered on and online. Cloudflare forwards traffic to the local API/Web; it does not host their processes or scientific state. Normal `make api`, `make web` and `make worker` remain independent development commands.
 
-The Mac must remain awake, online and running the application. A public URL is not a remote server: Cloudflare forwards to the Mac's local ports. Local health is `http://127.0.0.1:8000/health`; public health is `https://api.fwor1d.ru/health`. A transient tunnel-readiness warning during startup should be followed by checking both public domains. Local 200 with public 502 indicates a tunnel/origin/network availability issue, not a need to alter dataset or scientific results.
+```bash
+make presentation          # foreground, existing system Named Tunnel
+make presentation-status   # live local/public probes; exit 0 only when fully ready
+make presentation-stop     # another terminal; safe to repeat
+# Emergency alternative (mutually exclusive with Named mode):
+make presentation-quick
+```
 
-Public mode permits GET reads and side-effect-free classifier prediction POST, while create/enqueue/cancel and other writes stay blocked with 403. Classifier payloads are bounded at 32 KiB and schema-validated. This is a lightweight local-tool boundary, not a full authentication or production traffic-limiting system. Local trusted CLI writes remain available. Do not expose arbitrary artifact paths, secrets, Cloudflare credentials or tokens.
+`make presentation` uses the existing system Cloudflare Named Tunnel and default public origins `https://api.fwor1d.ru` / `https://beanfeature.fwor1d.ru`. The launchd service is externally managed: start/stop never signals it. Its local credentials/configuration and `/Library/LaunchDaemons/com.cloudflare.cloudflared.plist` remain outside Git. For another preconfigured Named Tunnel, set HTTPS origins with `BEANFEATURE_PUBLIC_API_URL` and `BEANFEATURE_PUBLIC_WEB_URL`; credentials/query strings are rejected. Emergency Quick mode owns its two temporary cloudflared processes and stops them with the session. Issued Quick URLs may initially fail DNS/reachability checks; their appearance in cloudflared output is not a readiness guarantee.
+
+Startup takes an exclusive repository session lock, checks required dependencies, checks ports 8000/3000 and rejects an unmanaged worker for this checkout. A second start of the healthy session reports it and creates no duplicates. Occupied ports report listener PIDs and distinguish recognizable unmanaged BeanFeature candidates from other/unidentified listeners; no listener is adopted or killed. Old state is checked against process creation times to guard against reused PIDs. Verified orphaned session groups are cleaned before a new start; malformed/unrecognized state fails explicitly for manual inspection. Do not delete session state/lock files while a session runs.
+
+The SQLite schema must already match the checkout; startup checks it read-only and does **not** run migrations. Use `make migrate` deliberately after backup when an upgrade is needed. A production Web build is reused only when source/environment fingerprint and Next BUILD_ID match; otherwise startup builds it in an owned process group. API starts with public scientific writes disabled; the worker retains existing queue semantics. Drain the scientific queue before operational failure testing: a normally running worker will execute already queued jobs, and stopping it during a real job follows the existing cancellation/recovery policy.
+
+Readiness is separate from process presence:
+
+- API `/health` retains its DB liveness check. `/ready` checks the expected schema and readable required tables/columns, returns a BeanFeature identity and read-only flag, and performs no migrations, dataset validation, training or artifact rehashing. Empty scientific collections remain valid application state.
+- Web `/api/ready` uses a bounded, uncached server-side API readiness request. It returns 503 if the backend is unavailable or incompatible, without exposing backend URLs/errors. The lifecycle requires local API read-only readiness, Web/backend readiness and a heartbeat written **after this worker started**, younger than 20 seconds.
+- `presentation-status` distinguishes worker `online`, `stale`, `offline`, `unknown` and intentionally `stopped`; it reports owned API/Web, sleep protection, tunnel process and fresh public API/Web probes separately (including HTTP failures, timeout, TLS failure or unavailable process introspection). Process existence alone does not prove public availability. A stopped session reports owned components offline even if another application has since taken a port.
+
+The supervisor checks owned processes continuously, local readiness/worker freshness every 5 seconds and public readiness every 30 seconds. A dead process or stale/unknown worker is a local failure; three consecutive API/Web readiness failures are also a failure. The session exits nonzero, retains diagnostics, and cleans all owned groups. There is no automatic restart loop. A missing/unknown external tunnel or transient DNS/Cloudflare/network failure instead reports `Public DEGRADED`, keeps the local stack serving and retries. Startup prints **Local presentation READY** before reporting public probes; public availability requires both application identities/readiness responses through the configured domains and a detected tunnel process. Detection of the external Named Tunnel process does not prove its connector/ingress configuration; public checks supply the separate evidence. The checks do not exhaustively test every UI asset, inference model or scientific artifact.
+
+Ctrl+C/SIGINT, SIGTERM, `presentation-stop` and partial-start failure all use the same cleanup: TERM to verified owned process groups, bounded grace period, then KILL for surviving group members. Build and worker descendants are included. The lock is released after cleanup. A hard SIGKILL/power loss cannot run cleanup; the next start/stop can recover verified orphaned groups from saved state. PID creation times and session/group identities prevent cleanup of unrelated/reused processes. The external Named Tunnel continues running and may return 502 while local origins are stopped.
+
+On macOS, the session owns `/usr/bin/caffeinate -i -s -w <supervisor PID>`. It prevents idle system sleep and asserts system wakefulness on AC power for the presentation lifetime; it releases on stop or supervisor exit. It does not change permanent power settings, keep the display lit, defeat lid-close/forced sleep, prevent battery depletion/shutdown or provide network connectivity. Keep the Mac open, powered and connected. Non-macOS hosts report sleep protection unavailable.
+
+Runtime PID/state and logs are ignored under `storage/presentation/`. `session.json` records phase, the session SQLite path (so status is independent of another terminal’s DB environment), verified process identities, latest public probe state and the current log directory; it contains no environment dump or tunnel credentials. Component/build logs rotate at 1 MiB with one backup each; at most five session log directories are retained. Failed sessions preserve their failure and logs until stop/new startup or retention expiry. The existing externally managed Cloudflare logs are not copied or rotated by BeanFeature.
+
+Troubleshooting: inspect `make presentation-status`, then its `logs` directory. For `occupied`/unmanaged worker, explicitly stop the identified development process yourself. For schema failure, back up and inspect migrations before `make migrate`. For worker `stale`, inspect `worker.log`; heartbeat proves responsiveness, not completion of queued training. Local ready + public failure means inspect the system tunnel, configured ingress, DNS and connectivity; no scientific state recovery is needed. A locked session with invalid state requires inspecting the owner before repairing local state, never broad `killall` commands. This foreground lifecycle provides local detection and bounded diagnostics, not unattended uptime guarantees or remote control.
+
+Public API mode still allows GET endpoints and bounded prediction POST (32 KiB); experiment/run creation, cancellation and other scientific state mutations return HTTP 403. Trusted local CLI workflows retain write access. This boundary is not comprehensive authentication or traffic limiting.
+
+### P1B validation matrix
+
+Focused tests use real subprocess groups and HTTP endpoints with an isolated heartbeat DB; they never execute ML jobs. Final acceptance also exercises the real Mac stack against its drained queue.
+
+| Scenario | Expected evidence |
+|---|---|
+| Healthy start/status/stop | Local API/Web ready, current owned worker heartbeat, external Named process, both public probes ready, owned caffeinate assertions; all owned groups gone after stop |
+| Repeat start/stop | Same owned identities after second start; second stop succeeds |
+| Unrelated listener / unmanaged component | Clear conflict; unrelated PID survives; no duplicate/adoption |
+| Partial startup failure | Session fails, already started groups cleaned, diagnostics retained |
+| Component exit / stale worker / repeated readiness failure | Local failure detected, session exits nonzero and cleans groups |
+| Stale/reused PID state / orphaned child | Birth-time guard leaves unrelated PID untouched; verified orphan group can be stopped |
+| Tunnel absent / public unavailable | Distinct process/probe states; healthy local stack continues |
+| SIGINT / SIGTERM | Same owned-group cleanup and release of sleep assertions |
+| Scientific preservation | All non-heartbeat SQLite records and dataset/run/model file hashes unchanged; no new runs |
+| Bounded logs / secret boundaries | Rotation/retention enforced; no environment dump or Cloudflare arguments/config in status or Git |
 
 ## Quality gate
 
