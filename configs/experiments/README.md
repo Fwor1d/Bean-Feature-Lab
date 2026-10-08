@@ -1,3 +1,3 @@
 # Experiment configurations
 
-Versioned scientific configurations will be frozen here before Stage 4B runs. Control points, search budgets and interval methods are not yet approved; no executable example is supplied at this stage.
+Versioned files in this directory freeze scientific conditions before the corresponding branch is executed. They contain methods and compute budgets, never result values. `core-comparators-v1.json` is the approved Core comparator matrix; changing it requires a new version rather than editing completed-run semantics.

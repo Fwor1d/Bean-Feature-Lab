@@ -1,25 +1,42 @@
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Annotated
+from importlib.metadata import version
+from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, Request, status
+from fastapi import Depends, FastAPI, Path, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.exc import SQLAlchemyError
 
+from beanfeature_application.reporting import ReportError, SnapshotCache, cohorts
 from beanfeature_application.service import ApplicationService, ConflictError, NotFoundError
 from beanfeature_infrastructure.bootstrap import Container, create_container
+from beanfeature_infrastructure.reports import PDFReports
+from beanfeature_research.contracts import ModelId
 
+from .body_limit import PredictionBodyLimit
 from .schemas import (
+    ClassifierBenchmarkResponse,
+    ClassifierExampleResponse,
+    CoreSufficiencyResponse,
     CreateExperimentRequest,
+    DatasetQualityResponse,
     DatasetResponse,
+    DeploymentModelResponse,
     ErrorResponse,
     ExperimentResponse,
+    FeatureBudgetPointResponse,
+    FeatureSelectionPointResponse,
+    FoldResultResponse,
     HealthResponse,
+    PredictRequest,
+    PredictResponse,
     ProjectResponse,
+    RunResourcesResponse,
     RunResponse,
+    RunSummaryResponse,
     SystemInfoResponse,
 )
 
@@ -37,6 +54,7 @@ def get_service(container: Annotated[Container, Depends(get_container)]) -> Appl
 
 Service = Annotated[ApplicationService, Depends(get_service)]
 ContainerDep = Annotated[Container, Depends(get_container)]
+DatabaseId = Annotated[int, Path(ge=1, le=2**63 - 1)]
 
 
 def error_response(code: str, message: str, http_status: int) -> JSONResponse:
@@ -50,16 +68,39 @@ def create_app(database_url: str | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         application.state.container = create_container(database_url)
-        logger.info("api.start version=0.1.0")
+        application.state.report_snapshots = SnapshotCache(
+            ttl_seconds=int(os.getenv("BEANFEATURE_REPORT_SNAPSHOT_TTL_SECONDS", "7200"))
+        )
+        application.state.pdf_reports = PDFReports()
+        logger.info("api.start version=%s", version("beanfeature-lab"))
         yield
+        application.state.pdf_reports.close()
         application.state.container.metadata.engine.dispose()
         logger.info("api.stop")
 
-    application = FastAPI(title="BeanFeature Lab API", version="0.1.0", lifespan=lifespan)
+    application = FastAPI(
+        title="BeanFeature Lab API", version=version("beanfeature-lab"), lifespan=lifespan
+    )
+    demo_read_only = os.getenv("BEANFEATURE_DEMO_READ_ONLY") == "1"
+
+    @application.middleware("http")
+    async def public_demo_guard(request: Request, call_next):
+        inference = request.method == "POST" and request.url.path == "/api/v1/classifier/predict"
+        if inference:
+            content_length = request.headers.get("content-length")
+            if content_length and not content_length.isdigit():
+                return error_response("invalid_request", "Invalid Content-Length header", 400)
+            if content_length and int(content_length) > 32_768:
+                return error_response("payload_too_large", "Classifier request exceeds 32 KiB", 413)
+        if demo_read_only and request.method not in {"GET", "HEAD", "OPTIONS"} and not inference:
+            return error_response("demo_read_only", "Public presentation is read-only", 403)
+        return await call_next(request)
+
     origins = os.getenv(
         "BEANFEATURE_CORS_ORIGINS",
         "http://localhost:3000,http://127.0.0.1:3000",
     ).split(",")
+    application.add_middleware(PredictionBodyLimit)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=[origin.strip() for origin in origins if origin.strip()],
@@ -67,6 +108,13 @@ def create_app(database_url: str | None = None) -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
+
+    @application.exception_handler(OSError)
+    async def file_unavailable(_request: Request, exc: OSError) -> JSONResponse:
+        logger.error("api.file_unavailable type=%s", type(exc).__name__)
+        return error_response(
+            "artifact_unavailable", "Required runtime content is unavailable", 503
+        )
 
     @application.exception_handler(NotFoundError)
     async def not_found(_request: Request, exc: NotFoundError) -> JSONResponse:
@@ -97,6 +145,66 @@ def create_app(database_url: str | None = None) -> FastAPI:
             return error_response("persistence_error", "Storage is unavailable", 503)
         return HealthResponse(status="ok")
 
+    @application.get("/ready")
+    def ready(container: ContainerDep):
+        available = container.metadata.presentation_readiness()
+        return JSONResponse(
+            status_code=200 if available else 503,
+            content={
+                "application": "beanfeature-api",
+                "status": "ready" if available else "not_ready",
+                "read_only": demo_read_only,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @application.exception_handler(ReportError)
+    async def report_error(_request: Request, exc: ReportError) -> JSONResponse:
+        response = error_response(exc.code, str(exc), exc.status)
+        response.headers["Cache-Control"] = "no-store"
+        if exc.status == 503:
+            response.headers["Retry-After"] = "5"
+        return response
+
+    @application.get("/api/v1/reports/core/cohorts")
+    def report_cohorts(service: Service):
+        return cohorts(service)
+
+    @application.get("/api/v1/reports/core/snapshot")
+    def report_snapshot(service: Service, request: Request, cohort_id: str):
+        if len(cohort_id) != 64 or any(c not in "0123456789abcdef" for c in cohort_id):
+            raise ReportError("invalid_cohort", "Некорректный cohort ID.", 422)
+        payload = request.app.state.report_snapshots.snapshot(service, cohort_id)
+        return JSONResponse(payload, headers={"Cache-Control": "no-store"})
+
+    @application.get("/api/v1/reports/core/{snapshot_id}/evidence")
+    def report_evidence(request: Request, snapshot_id: str):
+        with request.app.state.report_snapshots.lease(snapshot_id) as payload:
+            return JSONResponse(payload, headers={"Cache-Control": "no-store"})
+
+    @application.get("/api/v1/reports/core/{snapshot_id}/pdf")
+    def report_pdf(request: Request, snapshot_id: str):
+        with request.app.state.report_snapshots.lease(snapshot_id) as payload:
+            try:
+                output = request.app.state.pdf_reports.render(payload)
+            except ReportError:
+                raise
+            except Exception as exc:
+                logger.error("report.render_failed error_type=%s", type(exc).__name__)
+                raise ReportError(
+                    "pdf_failed", "Не удалось сформировать PDF. Повторите запрос.", 503
+                ) from exc
+            filename = "BeanFeatureLab-" + payload["evidence_sha256"][:16] + ".pdf"
+            return Response(
+                output,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Cache-Control": "no-store",
+                    "X-Evidence-SHA256": payload["evidence_sha256"],
+                },
+            )
+
     @application.get("/api/v1/system/info", response_model=SystemInfoResponse)
     def system_info(service: Service):
         return service.system_info()
@@ -106,8 +214,38 @@ def create_app(database_url: str | None = None) -> FastAPI:
         return []
 
     @application.get("/api/v1/datasets", response_model=list[DatasetResponse])
-    def datasets() -> list[DatasetResponse]:
-        return []
+    def datasets(service: Service) -> list[DatasetResponse]:
+        return [DatasetResponse.model_validate(item) for item in service.list_datasets()]
+
+    @application.get("/api/v1/datasets/{dataset_id}/manifest")
+    def dataset_manifest(dataset_id: DatabaseId, service: Service):
+        return service.get_dataset_manifest(dataset_id)
+
+    @application.get("/api/v1/datasets/{dataset_id}/quality", response_model=DatasetQualityResponse)
+    def dataset_quality(dataset_id: DatabaseId, service: Service) -> DatasetQualityResponse:
+        return DatasetQualityResponse.model_validate(service.dataset_quality(dataset_id))
+
+    @application.get("/api/v1/classifier/model", response_model=DeploymentModelResponse)
+    def classifier_model(service: Service):
+        model = service.classifier_info()
+        if model is None:
+            return error_response("not_found", "Deployment model is not registered", 404)
+        return model
+
+    @application.get("/api/v1/classifier/benchmark", response_model=ClassifierBenchmarkResponse)
+    def classifier_benchmark(service: Service):
+        benchmark = service.classifier_benchmark()
+        if benchmark is None:
+            return error_response("not_found", "Deployment benchmark is not calculated", 404)
+        return ClassifierBenchmarkResponse.model_validate(benchmark)
+
+    @application.get("/api/v1/classifier/example", response_model=ClassifierExampleResponse)
+    def classifier_example(service: Service) -> ClassifierExampleResponse:
+        return ClassifierExampleResponse.model_validate(service.classifier_example())
+
+    @application.post("/api/v1/classifier/predict", response_model=PredictResponse)
+    def classifier_predict(body: PredictRequest, service: Service):
+        return service.predict_classifier(body.features)
 
     @application.get("/api/v1/experiments", response_model=list[ExperimentResponse])
     def experiments(service: Service) -> list[ExperimentResponse]:
@@ -123,7 +261,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
         return ExperimentResponse.from_domain(created)
 
     @application.get("/api/v1/experiments/{experiment_id}", response_model=ExperimentResponse)
-    def get_experiment(experiment_id: int, service: Service) -> ExperimentResponse:
+    def get_experiment(experiment_id: DatabaseId, service: Service) -> ExperimentResponse:
         return ExperimentResponse.from_domain(service.get_experiment(experiment_id))
 
     @application.get("/api/v1/runs", response_model=list[RunResponse])
@@ -135,15 +273,119 @@ def create_app(database_url: str | None = None) -> FastAPI:
         response_model=RunResponse,
         status_code=status.HTTP_201_CREATED,
     )
-    def create_run(experiment_id: int, service: Service) -> RunResponse:
+    def create_run(experiment_id: DatabaseId, service: Service) -> RunResponse:
         return RunResponse.from_domain(service.create_run(experiment_id))
 
     @application.get("/api/v1/runs/{run_id}", response_model=RunResponse)
-    def get_run(run_id: int, service: Service) -> RunResponse:
+    def get_run(run_id: DatabaseId, service: Service) -> RunResponse:
         return RunResponse.from_domain(service.get_run(run_id))
 
+    @application.get("/api/v1/runs/{run_id}/summary", response_model=RunSummaryResponse)
+    def run_summary(run_id: DatabaseId, service: Service) -> RunSummaryResponse:
+        run = service.get_run(run_id)
+        return RunSummaryResponse(
+            run_id=run.display_id,
+            status=run.status,
+            result_state="CALCULATED"
+            if run.status.value == "COMPLETED" and run.summary
+            else "NOT_CALCULATED",
+            summary=run.summary if run.status.value == "COMPLETED" else None,
+        )
+
+    @application.get("/api/v1/runs/{run_id}/detail")
+    def run_detail(run_id: DatabaseId, service: Service):
+        result = service.get_run_detail(run_id)
+        if result is None:
+            return error_response("not_calculated", "Scientific result is not available", 409)
+        return result
+
+    @application.get("/api/v1/runs/{run_id}/verify")
+    def verify_run(run_id: DatabaseId, service: Service):
+        return service.verify_run(run_id)
+
+    @application.get("/api/v1/runs/{run_id}/resources", response_model=RunResourcesResponse)
+    def run_resources(run_id: DatabaseId, service: Service) -> RunResourcesResponse:
+        return RunResourcesResponse.model_validate(service.run_resources(run_id))
+
+    @application.get("/api/v1/runs/{run_id}/export/{export_kind}")
+    def export_run(
+        run_id: DatabaseId,
+        export_kind: Literal[
+            "result.json",
+            "config.json",
+            "summary.md",
+            "folds.csv",
+            "selected-features.csv",
+        ],
+        service: Service,
+    ) -> Response:
+        filename, media_type, content = service.export_run(run_id, export_kind)
+        return Response(
+            content,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @application.get("/api/v1/runs/{run_id}/folds", response_model=list[FoldResultResponse])
+    def run_folds(run_id: DatabaseId, service: Service):
+        result = service.get_run_result(run_id)
+        if result is None:
+            return error_response("not_calculated", "Scientific result is not available", 409)
+        return [FoldResultResponse.model_validate(fold) for fold in result["folds"]]
+
+    @application.get("/api/v1/runs/{run_id}/stability")
+    def run_stability(run_id: DatabaseId, service: Service):
+        result = service.get_run_result(run_id)
+        if result is None:
+            return error_response("not_calculated", "Scientific result is not available", 409)
+        return {
+            "run_id": result["run_id"],
+            "feature_stability": result["summary"].get("feature_stability"),
+        }
+
+    @application.get("/api/v1/runs/{run_id}/paired-comparison/{baseline_run_id}")
+    def run_paired_comparison(run_id: DatabaseId, baseline_run_id: DatabaseId, service: Service):
+        return service.compare_runs(run_id, baseline_run_id)
+
+    @application.get("/api/v1/runs/{left_run_id}/descriptive-comparison/{right_run_id}")
+    def run_descriptive_comparison(
+        left_run_id: DatabaseId, right_run_id: DatabaseId, service: Service
+    ):
+        return service.compare_runs_descriptively(left_run_id, right_run_id)
+
+    @application.get(
+        "/api/v1/feature-budget/series", response_model=list[FeatureBudgetPointResponse]
+    )
+    def feature_budget_series(service: Service) -> list[FeatureBudgetPointResponse]:
+        return [
+            FeatureBudgetPointResponse.model_validate(item)
+            for item in service.feature_budget_series()
+        ]
+
+    @application.get(
+        "/api/v1/features/selection-series",
+        response_model=list[FeatureSelectionPointResponse],
+    )
+    def feature_selection_series(service: Service) -> list[FeatureSelectionPointResponse]:
+        return [
+            FeatureSelectionPointResponse.model_validate(item)
+            for item in service.feature_selection_series()
+        ]
+
+    @application.get("/api/v1/core/sufficiency", response_model=list[CoreSufficiencyResponse])
+    def core_sufficiency(service: Service) -> list[CoreSufficiencyResponse]:
+        return [
+            CoreSufficiencyResponse.model_validate(service.core_sufficiency(model))
+            for model in ModelId
+            if model is not ModelId.MLP
+        ]
+
+    @application.get("/api/v1/core/sufficiency/{model}", response_model=CoreSufficiencyResponse)
+    def model_sufficiency(model: ModelId, service: Service) -> CoreSufficiencyResponse:
+        return CoreSufficiencyResponse.model_validate(service.core_sufficiency(model))
+
     @application.post("/api/v1/runs/{run_id}/cancel", response_model=RunResponse)
-    def cancel_run(run_id: int, service: Service) -> RunResponse:
+    def cancel_run(run_id: DatabaseId, service: Service) -> RunResponse:
         return RunResponse.from_domain(service.cancel_run(run_id))
 
     return application

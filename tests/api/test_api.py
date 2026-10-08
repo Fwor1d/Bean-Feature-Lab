@@ -15,6 +15,17 @@ def test_empty_collections(api_client) -> None:
         assert response.status_code == 200
         assert response.json() == []
 
+    sufficiency = api_client.get("/api/v1/core/sufficiency")
+    assert sufficiency.status_code == 200
+    assert len(sufficiency.json()) == 5
+    assert all(
+        item["status"] == "NOT_CALCULATED_MISSING_BASELINE"
+        and item["minimal_sufficient_k"] is None
+        and item["comparisons"] == []
+        for item in sufficiency.json()
+    )
+    assert api_client.get("/api/v1/features/selection-series").json() == []
+
 
 def test_create_experiment_and_run_without_fake_metrics(api_client) -> None:
     experiment = api_client.post(
@@ -38,6 +49,22 @@ def test_create_experiment_and_run_without_fake_metrics(api_client) -> None:
     assert run.json()["status"] == "QUEUED"
     assert run.json()["metrics"] is None
     assert run.json()["result_state"] == "NOT_CALCULATED"
+    summary = api_client.get("/api/v1/runs/1/summary")
+    assert summary.json()["result_state"] == "NOT_CALCULATED"
+    assert summary.json()["summary"] is None
+    folds = api_client.get("/api/v1/runs/1/folds")
+    assert folds.status_code == 409
+    assert folds.json()["error"]["code"] == "not_calculated"
+    detail = api_client.get("/api/v1/runs/1/detail")
+    assert detail.status_code == 409
+    assert detail.json()["error"]["code"] == "not_calculated"
+    verification = api_client.get("/api/v1/runs/1/verify")
+    assert verification.status_code == 200
+    assert verification.json()["verified"] is False
+    export = api_client.get("/api/v1/runs/1/export/result.json")
+    assert export.status_code == 409
+    assert export.json()["error"]["code"] == "conflict"
+    assert api_client.get("/api/v1/runs/1/resources").status_code == 409
     assert api_client.get("/api/v1/runs").json()[0]["display_id"] == "RUN-000001"
     assert api_client.post("/api/v1/runs/1/cancel").json()["status"] == "CANCELLED"
     conflict = api_client.post("/api/v1/runs/1/cancel")
@@ -61,3 +88,47 @@ def test_validation_and_not_found_contracts(api_client) -> None:
     assert invalid.status_code == 422
     assert invalid.json()["error"]["code"] == "invalid_configuration"
     assert api_client.get("/api/v1/runs/999").json()["error"]["code"] == "not_found"
+    assert api_client.get("/api/v1/datasets/999/manifest").json()["error"]["code"] == "not_found"
+    assert api_client.get("/api/v1/datasets/999/quality").json()["error"]["code"] == "not_found"
+
+
+def test_public_demo_is_read_only(monkeypatch, tmp_path) -> None:
+    from fastapi.testclient import TestClient
+
+    from beanfeature_api.main import create_app
+
+    monkeypatch.setenv("BEANFEATURE_DEMO_READ_ONLY", "1")
+    with TestClient(create_app(f"sqlite:///{tmp_path / 'demo.sqlite'}")) as client:
+        assert client.get("/docs").status_code == 200
+        response = client.post("/api/v1/experiments", json={"name": "Blocked"})
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "demo_read_only"
+        inference = client.post("/api/v1/classifier/predict", json={})
+        assert inference.status_code == 422
+        assert inference.json()["error"]["code"] == "validation_error"
+        oversized = client.post(
+            "/api/v1/classifier/predict",
+            content=b"{}",
+            headers={"content-length": "32769", "content-type": "application/json"},
+        )
+        assert oversized.status_code == 413
+        assert oversized.json()["error"]["code"] == "payload_too_large"
+
+
+def test_readiness_checks_schema_read_only_without_migration(api_client, monkeypatch) -> None:
+    from sqlalchemy import text
+
+    engine = api_client.app.state.container.metadata.engine
+    ready = api_client.get("/ready")
+    assert ready.status_code == 200
+    assert ready.json() == {"application": "beanfeature-api", "status": "ready", "read_only": False}
+    assert ready.headers["cache-control"] == "no-store"
+    with engine.begin() as connection:
+        connection.execute(text("UPDATE alembic_version SET version_num='future_schema'"))
+    assert api_client.get("/health").status_code == 200
+    assert api_client.get("/ready").status_code == 503
+    with engine.connect() as connection:
+        assert (
+            connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
+            == "future_schema"
+        )

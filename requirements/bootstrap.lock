@@ -1,0 +1,4 @@
+# Build tooling for --no-build-isolation editable installation.
+pip==24.0
+setuptools==80.10.2
+wheel==0.45.1

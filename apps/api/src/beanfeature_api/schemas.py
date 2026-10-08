@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from beanfeature_application.contracts import Experiment, ExperimentConfig, Run
-from beanfeature_research.contracts import ModelId, RunStatus, SelectorId
+from beanfeature_research.contracts import ModelId, ResultState, RunStatus, SelectorId
 
 
 class ErrorDetail(BaseModel):
@@ -28,7 +28,7 @@ class SystemInfoResponse(BaseModel):
     git_commit: str | None
     database: str
     worker: str
-    scientific_results: Literal["NOT_CALCULATED"]
+    scientific_results: ResultState
 
 
 class ProjectResponse(BaseModel):
@@ -41,17 +41,132 @@ class DatasetResponse(BaseModel):
     source_id: int
     version: str
     validated: bool
+    rows: int | None = None
+    feature_count: int | None = None
+    arff_sha256: str | None = None
+
+
+class ClassBalanceResponse(BaseModel):
+    count: int
+    fraction: float
+
+
+class FeatureQualityResponse(BaseModel):
+    minimum: float
+    maximum: float
+    median: float
+    q1: float
+    q3: float
+    iqr: float
+    constant: bool
+    extreme_outlier_count: int
+    extreme_outlier_lower_fence: float
+    extreme_outlier_upper_fence: float
+
+
+class DatasetQualityResponse(BaseModel):
+    dataset_sha256: str
+    source_id: int
+    rows: int
+    columns: int
+    numeric_feature_count: int
+    missing_values: int
+    infinite_values: int
+    exact_duplicate_rows_involved: int
+    exact_duplicate_excess_rows: int
+    class_balance: dict[str, ClassBalanceResponse]
+    constant_columns: list[str]
+    feature_statistics: dict[str, FeatureQualityResponse]
+    pearson_correlation: dict[str, dict[str, float]]
+    high_absolute_correlation_pairs: list[dict[str, str | float]]
+    high_correlation_threshold: float
+    correlation_note: str
+    outlier_method: str
+    cleaning_applied: Literal[False]
+    note: str
+    schema_notice: str
+
+
+class ObservedRangeResponse(BaseModel):
+    minimum: float
+    maximum: float
+
+
+class DeploymentModelResponse(BaseModel):
+    model_id: str
+    model_version: str | None = None
+    model_family: str
+    estimator_identifier: str | None = None
+    source_run: str
+    source_result_sha256: str | None = None
+    source_configuration: dict[str, object] | None = None
+    dataset_id: int
+    dataset_sha256: str
+    dataset_version: str | None = None
+    training_rows: int | None = None
+    feature_names: list[str]
+    feature_schema: list[dict[str, object]] | None = None
+    observed_ranges: dict[str, ObservedRangeResponse] | None = None
+    classes: list[str]
+    training_timestamp_utc: str
+    selected_parameters: dict[str, object]
+    deployment_model: Literal[True]
+    deployment_status: Literal["ACTIVE", "INACTIVE"] | None = None
+    active: bool | None = None
+    artifact_sha256: str | None = None
+    model_sha256: str
+    note: str
+
+
+class ClassifierExampleResponse(BaseModel):
+    source: str
+    row_index: int
+    features: dict[str, float]
+    actual_class: str
+    note: str
+
+
+class ClassifierLatencyResponse(BaseModel):
+    rows: int
+    repeats: int
+    median_ms: float
+    p95_ms: float
+    samples_ms: list[float]
+
+
+class ClassifierBenchmarkResponse(BaseModel):
+    status: Literal["CALCULATED"]
+    benchmark_kind: str
+    model_id: str
+    source_run: str
+    dataset_sha256: str
+    peak_process_tree_rss_bytes: int
+    baseline_process_tree_rss_bytes: int
+    incremental_peak_rss_bytes: int
+    maximum_child_processes: int
+    sampling_interval_seconds: float
+    rss_samples: int
+    latency: dict[str, ClassifierLatencyResponse]
+    serialized_pipeline_bytes: int
+    warmup_repetitions: int
+    hardware: dict[str, str | int]
+    note: str
+    measured_at_utc: str
 
 
 class ExperimentConfigDTO(BaseModel):
     model: ModelId
     selector: SelectorId
-    budget_kind: Literal["original_features", "pca_components"]
+    budget_kind: Literal["original_features", "pca_components", "sparse_original_features"]
     k_original_features: int | None = Field(default=None, ge=1, le=16)
     n_components: int | None = Field(default=None, ge=1, le=16)
     required_raw_feature_count: int | None = None
     dataset_version: str | None = Field(default=None, max_length=128)
-    seed: int = 42
+    seed: int = Field(default=42, ge=0, le=4_294_967_295)
+    evaluation_mode: Literal["protocol", "smoke"] = "protocol"
+    search_space: dict[str, list[object]] = Field(default_factory=dict)
+    reproduces_run_id: str | None = Field(default=None, pattern=r"^RUN-\d{6}$")
+    selector_configuration: dict[str, object] = Field(default_factory=dict)
 
     def to_domain(self) -> ExperimentConfig:
         return ExperimentConfig(**self.model_dump())
@@ -89,8 +204,8 @@ class RunResponse(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     error: str | None
-    metrics: None = None  # No scientific result path exists in Stage 4A.
-    result_state: Literal["NOT_CALCULATED"] = "NOT_CALCULATED"
+    metrics: dict[str, float] | None = None
+    result_state: ResultState = ResultState.NOT_CALCULATED
 
     @classmethod
     def from_domain(cls, run: Run) -> "RunResponse":
@@ -102,5 +217,159 @@ class RunResponse(BaseModel):
             created_at=run.created_at,
             started_at=run.started_at,
             finished_at=run.finished_at,
-            error=run.error,
+            error=(
+                "Исполнение отменено."
+                if run.status is RunStatus.CANCELLED
+                else "Исполнение завершилось с ошибкой. "
+                "Подробности доступны в локальной диагностике."
+            )
+            if run.error
+            else None,
+            metrics={
+                "macro_f1_mean": float(run.summary["macro_f1_mean"]),
+                "accuracy_mean": float(run.summary["accuracy_mean"]),
+            }
+            if run.status is RunStatus.COMPLETED and run.summary
+            else None,
+            result_state=ResultState.CALCULATED
+            if run.status is RunStatus.COMPLETED and run.summary
+            else ResultState.NOT_CALCULATED,
         )
+
+
+class RunSummaryResponse(BaseModel):
+    run_id: str
+    status: RunStatus
+    result_state: ResultState
+    summary: dict[str, object] | None
+
+
+class ResourceDistributionResponse(BaseModel):
+    samples: int
+    median: float
+    p95: float
+    minimum: float
+    maximum: float
+
+
+class RunResourcesResponse(BaseModel):
+    run_id: str
+    measurement_scope: str
+    total_nested_search_seconds: float
+    total_outer_refit_seconds: float
+    inference_latency_ms: dict[str, ResourceDistributionResponse | None]
+    serialized_pipeline_bytes: ResourceDistributionResponse | None
+    peak_memory_bytes: ResourceDistributionResponse | None
+    peak_memory_status: Literal["CALCULATED", "NOT_CALCULATED"]
+    peak_memory_reason: str | None
+    process_tree_measurement: dict[str, object] | None = None
+    software_hardware_profile: dict[str, object]
+    timing_note: str
+
+
+class FeatureBudgetPointResponse(BaseModel):
+    run_id: str
+    model: ModelId
+    selector: SelectorId
+    budget_kind: Literal["original_features", "pca_components"]
+    k_original_features: int | None
+    n_components: int | None
+    budget_value: int
+    macro_f1_mean: float
+    accuracy_mean: float
+    macro_f1_fold_sd_descriptive: float | None
+    dataset_hash: str
+    outer_split_set_sha256: str
+
+
+class FeatureSelectionPointResponse(BaseModel):
+    run_id: str
+    model: ModelId
+    selector: SelectorId
+    k_original_features: int
+    outer_fold_count: int
+    selection_frequency: dict[str, float]
+    pairwise_jaccard_mean: float | None
+    dataset_hash: str
+    outer_split_set_sha256: str
+
+
+class PairedLossResponse(BaseModel):
+    fold_id: str
+    loss_macro_f1: float
+
+
+class SufficiencyComparisonResponse(BaseModel):
+    k_original_features: int
+    decision: Literal["sufficient", "not_sufficient", "not_calculated"]
+    interval_method: str | None = None
+    margin_macro_f1: float | None = None
+    family_alpha: float | None = None
+    comparison_alpha: float | None = None
+    multiplicity_method: str | None = None
+    n_paired_folds: int | None = None
+    test_train_ratio: float | None = None
+    paired_losses: list[PairedLossResponse] = Field(default_factory=list)
+    mean_loss: float | None = None
+    sample_variance: float | None = None
+    corrected_variance: float | None = None
+    corrected_standard_error: float | None = None
+    critical_value: float | None = None
+    one_sided_upper_confidence_bound: float | None = None
+    sufficient_k: int | None = None
+    status: str | None = None
+
+
+class CoreSufficiencyResponse(BaseModel):
+    model: ModelId
+    baseline_run_id: str | None = None
+    dataset_hash: str | None = None
+    outer_split_set_sha256: str | None = None
+    minimal_sufficient_k: int | None
+    status: Literal["CALCULATED", "PARTIAL", "NOT_CALCULATED_MISSING_BASELINE"]
+    calculated_comparisons: int = 0
+    comparisons: list[SufficiencyComparisonResponse]
+
+
+class PredictRequest(BaseModel):
+    features: dict[str, object]
+
+
+class PredictResponse(BaseModel):
+    model_id: str
+    source_run: str
+    predicted_class: str
+    predicted_probability: float
+    probabilities: dict[str, float]
+    features: dict[str, float]
+    dataset_sha256: str
+    local_explanation: dict[str, object] | None = None
+
+
+class FoldResultResponse(BaseModel):
+    fold_id: str
+    split_sha256: str
+    inner_seed: int
+    train_size: int
+    test_size: int
+    best_params: dict[str, object]
+    inner_best_macro_f1: float
+    selected_original_features: list[str] | None
+    representation: dict[str, object]
+    macro_f1: float
+    accuracy: float
+    per_class_recall: dict[str, float]
+    confusion_matrix: list[list[int]]
+    roc_auc_ovr_macro: float | None
+    roc_auc_reason: str | None
+    search_seconds: float
+    refit_seconds: float
+    search_plus_refit_seconds: float
+    inference_latency: dict[str, object]
+    serialized_pipeline_bytes: int
+    peak_memory_bytes: int | None
+    peak_memory_reason: str | None
+    y_true: list[str]
+    y_pred: list[str]
+    model: ModelId
+    selector: SelectorId

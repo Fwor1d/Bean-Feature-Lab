@@ -1,6 +1,8 @@
 "use client";
 
 import { createTheme } from "@mui/material/styles";
+import { ruRU as materialRuRU } from "@mui/material/locale";
+import { ruRU as gridRuRU } from "@mui/x-data-grid/locales";
 
 export const theme = createTheme({
   palette: {
@@ -16,4 +18,4 @@ export const theme = createTheme({
     MuiTextField: { defaultProps: { size: "small" } },
     MuiSelect: { defaultProps: { size: "small" } },
   },
-});
+}, materialRuRU, gridRuRU);

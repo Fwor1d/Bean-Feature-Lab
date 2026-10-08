@@ -1,4 +1,7 @@
-import type { Dataset, Experiment, Project, Run, SystemInfo } from "./contracts";
+import type {
+  ClassifierBenchmark, ClassifierExample, ClassifierModel, ClassifierPrediction, CoreSufficiency, Dataset, DatasetManifest, DatasetQuality, DescriptiveComparison, Experiment, FeatureBudgetPoint, FeatureSelectionPoint, FoldResult, PairedComparison,
+  Project, Run, RunDetail, RunResources, RunSummary, RunVerification, SystemInfo,
+} from "./contracts";
 
 export class ApiError extends Error {
   constructor(public readonly status: number, public readonly code: string, message: string) {
@@ -6,12 +9,14 @@ export class ApiError extends Error {
   }
 }
 
-const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+const baseUrl = typeof window === "undefined"
+  ? (process.env.BEANFEATURE_INTERNAL_API_BASE_URL ?? "http://127.0.0.1:8000")
+  : (process.env.NEXT_PUBLIC_API_BASE_URL || "/api/backend");
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}${path}`, { ...init, cache: "no-store" });
+    response = await fetch(`${baseUrl}${path}`, { ...init, cache: "no-store", signal: init?.signal ?? AbortSignal.timeout(30_000) });
   } catch {
     throw new ApiError(0, "api_unavailable", "API недоступен. Запустите локальный сервер и повторите запрос.");
   }
@@ -28,6 +33,27 @@ export const api = {
   runs: () => request<Run[]>("/api/v1/runs"),
   projects: () => request<Project[]>("/api/v1/projects"),
   datasets: () => request<Dataset[]>("/api/v1/datasets"),
+  datasetManifest: (id: number) => request<DatasetManifest>(`/api/v1/datasets/${id}/manifest`),
+  datasetQuality: (id: number) => request<DatasetQuality>(`/api/v1/datasets/${id}/quality`),
+  classifierModel: () => request<ClassifierModel>("/api/v1/classifier/model"),
+  classifierBenchmark: () => request<ClassifierBenchmark>("/api/v1/classifier/benchmark"),
+  classifierExample: () => request<ClassifierExample>("/api/v1/classifier/example"),
+  predict: (features: Record<string, number>) => request<ClassifierPrediction>("/api/v1/classifier/predict", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ features }),
+  }),
+  run: (id: number) => request<Run>(`/api/v1/runs/${id}`),
+  runSummary: (id: number) => request<RunSummary>(`/api/v1/runs/${id}/summary`),
+  runDetail: (id: number) => request<RunDetail>(`/api/v1/runs/${id}/detail`),
+  runVerification: (id: number) => request<RunVerification>(`/api/v1/runs/${id}/verify`),
+  runResources: (id: number) => request<RunResources>(`/api/v1/runs/${id}/resources`),
+  runFolds: (id: number) => request<FoldResult[]>(`/api/v1/runs/${id}/folds`),
+  featureBudgetSeries: () => request<FeatureBudgetPoint[]>("/api/v1/feature-budget/series"),
+  featureSelectionSeries: () => request<FeatureSelectionPoint[]>("/api/v1/features/selection-series"),
+  coreSufficiency: () => request<CoreSufficiency[]>("/api/v1/core/sufficiency"),
+  pairedComparison: (compact: number, baseline: number) =>
+    request<PairedComparison>(`/api/v1/runs/${compact}/paired-comparison/${baseline}`),
+  descriptiveComparison: (left: number, right: number) =>
+    request<DescriptiveComparison>(`/api/v1/runs/${left}/descriptive-comparison/${right}`),
   createExperiment: (body: { name: string; configuration: Experiment["configuration"] }) =>
     request<Experiment>("/api/v1/experiments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   createRun: (experimentId: number) => request<Run>(`/api/v1/experiments/${experimentId}/runs`, { method: "POST" }),
@@ -37,7 +63,8 @@ export function apiErrorMessage(error: unknown): string {
   if (!(error instanceof ApiError)) return "Не удалось загрузить данные. Повторите запрос.";
   if (error.code === "api_unavailable") return error.message;
   if (error.code === "persistence_error") return "Хранилище недоступно. Проверьте миграции и работу API.";
+  if (error.code === "demo_read_only") return "Публичная демонстрация доступна только для чтения.";
   if (error.code === "not_found") return "Запись не найдена. Обновите список.";
-  if (error.code === "validation_error" || error.code === "invalid_configuration") return "Проверьте поля конфигурации и повторите запрос.";
+  if (error.code === "validation_error" || error.code === "invalid_configuration") return "Проверьте значения полей и повторите запрос.";
   return error.message;
 }

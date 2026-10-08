@@ -1,6 +1,7 @@
 "use client";
 
 import { Box, Typography, useMediaQuery } from "@mui/material";
+import { ruRU } from "@mui/x-data-grid/locales";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 
 const originalColumns: GridColDef[] = [
@@ -29,7 +30,7 @@ export function EmptyResultsGrid({ pca = false }: { pca?: boolean }) {
   const narrow = useMediaQuery("(max-width: 820px)");
   const columns = pca ? pcaColumns : originalColumns;
   return <Box sx={{ height: 160, width: "100%" }}>
-    <DataGrid columns={narrow ? columns.filter(column => ["feature", "component", "status"].includes(column.field)) : columns} rows={[]} slots={{ noRowsOverlay: () => <NoRows pca={pca} /> }}
+    <DataGrid localeText={ruRU.components.MuiDataGrid.defaultProps.localeText} columns={narrow ? columns.filter(column => ["feature", "component", "status"].includes(column.field)) : columns} rows={[]} slots={{ noRowsOverlay: () => <NoRows pca={pca} /> }}
       initialState={{ pagination: { paginationModel: { pageSize: 10 } } }} pageSizeOptions={[10, 25, 50, 100]}
       hideFooter disableRowSelectionOnClick sx={{ fontSize: 13, "& .MuiDataGrid-columnHeaderTitle": { fontWeight: 600 } }} />
   </Box>;

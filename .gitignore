@@ -22,6 +22,8 @@ out/
 *.temp
 storage/sqlite/*.sqlite*
 storage/sqlite/*.db*
+storage/backups/
+storage/presentation/
 artifacts/runs/*
 !artifacts/runs/README.md
 artifacts/models/*
@@ -33,3 +35,5 @@ data/processed/*
 artifacts/tmp/
 artifacts/cache/
 data/processed/cache/
+
+.impeccable/critique/
