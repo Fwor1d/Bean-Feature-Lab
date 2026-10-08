@@ -2,6 +2,11 @@
 
 Run all commands from the repository root. Runtime data, SQLite and scientific/model artifacts are intentionally not in Git; retain these directories when moving the project. `make setup` prepares dependencies and migrations, but does not recreate calculated results.
 
+For the private source + runtime Release Candidate distribution, follow
+[NEW_DEVICE_SETUP.md](NEW_DEVICE_SETUP.md). `make install` uses the pinned Python
+environment and `npm ci` without migrations; `make install-python` prepares the
+restoration CLI. Another Codex instance starts with [CODEX_HANDOFF.md](CODEX_HANDOFF.md).
+
 ## Research
 
 1. `beanfeature dataset fetch --accept-official-schema` downloads only official UCI 602. Use `.venv/bin/beanfeature` for every CLI command below.

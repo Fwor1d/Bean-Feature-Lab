@@ -2,6 +2,8 @@
 
 BeanFeature Lab is a local research workbench for measuring how the number of original Dry Bean morphological features affects multiclass classification. The scientific engine runs outside HTTP requests; the Instrument Workstation UI reads real saved results through typed API contracts.
 
+**Moving to another computer:** follow [New-device installation](docs/operations/NEW_DEVICE_SETUP.md) to download the private RC source and verified runtime asset. [Codex handoff](docs/operations/CODEX_HANDOFF.md) supplies repository-based onboarding without previous chat history. Source alone does not include calculated results or deployment models.
+
 ## Architecture
 
 `apps/web` is the Next.js frontend; `apps/api` exposes typed FastAPI contracts; `apps/worker` processes one queued scientific run at a time. `tools/cli` and the worker use the same `packages/application` use cases. `packages/research` owns leakage-safe scikit-learn pipelines and nested CV, while `packages/infrastructure` owns official UCI acquisition, SQLite and hash-verified artifact storage. See [ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) and [EXPERIMENT_PROTOCOL.md](docs/research/EXPERIMENT_PROTOCOL.md).
@@ -9,7 +11,7 @@ BeanFeature Lab is a local research workbench for measuring how the number of or
 ## Local setup
 
 - macOS Apple Silicon, Node.js 24 LTS, Python 3.11. LightGBM on macOS requires Homebrew `libomp`.
-- `make setup` creates project-local `.venv`, installs Python/frontend dependencies and applies migrations. It does not install into the global Python environment.
+- `make install` creates project-local `.venv`, installs pinned Python dependencies and frontend dependencies through `npm ci`, without changing runtime. `make install-python` prepares only the restoration CLI. `make setup` additionally applies migrations; use the restore guide for recorded results. No global Python installation is modified.
 - `make migrate` applies subsequent Alembic migrations. Defaults are SQLite at `storage/sqlite/beanfeature.sqlite`, API at `127.0.0.1:8000`, and web at `127.0.0.1:3000`. Optional overrides are described in `.env.example`; do not commit a real `.env`.
 - `make api`, `make worker`, and `make web` run in separate terminals. `make test`, `make lint`, `make format`, `make typecheck`, and `make build` cover the developer workflow.
 
@@ -38,7 +40,7 @@ Create a short **integration smoke** run (two outer folds, two inner folds; not 
 .venv/bin/beanfeature runs result RUN_ID
 ```
 
-Omit `--smoke` for the approved 5×3 repeated-stratified outer / 4-fold stratified inner protocol. The same seed and dataset yield identical outer split identifiers across comparable conditions. `beanfeature-worker` consumes queued runs sequentially and supports clean shutdown; an interrupted running run becomes `FAILED` and is retried only as a new run. To inspect or idempotently enqueue the 86-condition Core MI matrix:
+Omit `--smoke` for the approved 5×3 repeated-stratified outer / 4-fold stratified inner protocol. Full-protocol execution requires and validates the existing frozen outer manifest for the exact dataset/version/seed; it never regenerates missing splits. See [frozen execution](docs/operations/LOCAL_WORKFLOW.md#frozen-outer-split-execution). `beanfeature-worker` consumes queued runs sequentially and supports clean shutdown; an interrupted running run becomes `FAILED` and is retried only as a new run. To inspect or idempotently enqueue the 86-condition Core MI matrix:
 
 ```sh
 .venv/bin/beanfeature core enqueue-mi

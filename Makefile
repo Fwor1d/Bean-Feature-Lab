@@ -1,10 +1,20 @@
-.PHONY: setup web api worker test lint format typecheck build migrate presentation presentation-quick presentation-status presentation-stop
+.PHONY: setup install install-python web api worker test lint format typecheck build migrate presentation presentation-quick presentation-status presentation-stop
 
-setup:
-	python3 -m venv .venv
-	.venv/bin/python -m pip install -e '.[dev]'
-	cd apps/web && npm install
-	.venv/bin/alembic upgrade head
+PYTHON ?= python3.11
+
+setup: install migrate
+
+# Install dependencies without creating or migrating scientific runtime state.
+install: install-python
+	cd apps/web && npm ci
+
+install-python:
+	$(PYTHON) -c 'import sys; assert sys.version_info[:2] == (3, 11), "BeanFeature Lab requires Python 3.11"'
+	$(PYTHON) -m venv .venv
+	.venv/bin/python -m pip install -r requirements/bootstrap.lock
+	.venv/bin/python -m pip install -r requirements/python311.lock
+	.venv/bin/python -m pip install --no-build-isolation --no-deps -e '.[dev]'
+	.venv/bin/python -m pip check
 
 web:
 	cd apps/web && npm run dev
