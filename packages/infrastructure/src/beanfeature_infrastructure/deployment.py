@@ -80,7 +80,8 @@ class LocalDeploymentModelStore:
             raise ValueError("Invalid deployment model metadata")
         return payload
 
-    def load(self) -> tuple[object, dict[str, object]]:
+    def verified_binary(self) -> tuple[bytes, dict[str, object]]:
+        """Check existing model integrity without executing a serialized pipeline."""
         metadata = self.metadata()
         if metadata is None:
             raise FileNotFoundError("Deployment model has not been trained")
@@ -96,6 +97,10 @@ class LocalDeploymentModelStore:
         binary = self.artifacts.resolve(model_path).read_bytes()
         if sha256(binary).hexdigest() != digest:
             raise ValueError("Deployment model checksum mismatch")
+        return binary, metadata
+
+    def load(self) -> tuple[object, dict[str, object]]:
+        binary, metadata = self.verified_binary()
         return joblib.load(BytesIO(binary)), metadata
 
     def latest_benchmark(self) -> dict[str, object] | None:

@@ -20,14 +20,17 @@ class Container:
 
 
 def create_container(
-    database_url: str | None = None, *, measure_process_resources: bool = False
+    database_url: str | None = None,
+    *,
+    measure_process_resources: bool = False,
+    runtime_root: Path | None = None,
 ) -> Container:
     engine = make_engine(database_url)
     sessions = make_session_factory(engine)
     metadata = EnvironmentMetadata(engine, sessions)
-    dataset_store = UCIDatasetStore()
+    dataset_store = UCIDatasetStore(runtime_root / "data") if runtime_root else UCIDatasetStore()
     datasets = SQLiteDatasetRepository(sessions)
-    artifacts = ArtifactStore(Path("artifacts/runs"))
+    artifacts = ArtifactStore((runtime_root or Path(".")) / "artifacts/runs")
     return Container(
         service=ApplicationService(
             SQLiteExperimentRepository(sessions),
@@ -36,7 +39,11 @@ def create_container(
             datasets=datasets,
             dataset_store=dataset_store,
             artifacts=artifacts,
-            deployment_models=LocalDeploymentModelStore(),
+            deployment_models=(
+                LocalDeploymentModelStore(runtime_root / "artifacts/models")
+                if runtime_root
+                else LocalDeploymentModelStore()
+            ),
             resource_monitor=ProcessTreeResourceMonitor() if measure_process_resources else None,
         ),
         metadata=metadata,

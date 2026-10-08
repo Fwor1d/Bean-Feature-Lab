@@ -22,6 +22,7 @@ out/
 *.temp
 storage/sqlite/*.sqlite*
 storage/sqlite/*.db*
+storage/backups/
 artifacts/runs/*
 !artifacts/runs/README.md
 artifacts/models/*

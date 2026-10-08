@@ -1,5 +1,6 @@
 import json
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
@@ -7,10 +8,12 @@ from typing import Annotated
 import typer
 
 from beanfeature_application.contracts import ExperimentConfig
+from beanfeature_application.runtime import RuntimeStateService
 from beanfeature_application.service import NotFoundError
 from beanfeature_infrastructure.benchmark import benchmark_deployment_model
 from beanfeature_infrastructure.bootstrap import create_container
 from beanfeature_infrastructure.files import ArtifactStore
+from beanfeature_infrastructure.runtime import LocalRuntimeStateStore
 from beanfeature_research.contracts import ModelId, SelectorId
 
 app = typer.Typer(help="BeanFeature Lab reproducible local research CLI.")
@@ -20,12 +23,55 @@ run_app = typer.Typer()
 dataset_app = typer.Typer()
 core_app = typer.Typer()
 classifier_app = typer.Typer()
+runtime_app = typer.Typer(
+    help="Preserve and verify local runtime without scientific recomputation."
+)
 app.add_typer(system_app, name="system")
 app.add_typer(experiment_app, name="experiments")
 app.add_typer(run_app, name="runs")
 app.add_typer(dataset_app, name="dataset")
 app.add_typer(core_app, name="core")
 app.add_typer(classifier_app, name="classifier")
+app.add_typer(runtime_app, name="runtime")
+
+
+def _runtime_result(operation: Callable[[], dict[str, object]]) -> None:
+    try:
+        result = operation()
+    except Exception as exc:
+        typer.echo(f"Runtime portability failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def _runtime_service() -> RuntimeStateService:
+    return RuntimeStateService(LocalRuntimeStateStore())
+
+
+@runtime_app.command("backup")
+def backup_runtime(
+    output: Annotated[Path, typer.Option(help="New archive path outside scientific runtime")],
+    source_root: Annotated[Path | None, typer.Option()] = None,
+) -> None:
+    _runtime_result(lambda: _runtime_service().backup(output, source_root))
+
+
+@runtime_app.command("inspect")
+def inspect_runtime(backup: Path) -> None:
+    _runtime_result(lambda: _runtime_service().inspect(backup))
+
+
+@runtime_app.command("verify")
+def verify_runtime(backup: Path) -> None:
+    _runtime_result(lambda: _runtime_service().verify(backup))
+
+
+@runtime_app.command("restore")
+def restore_runtime(
+    backup: Path,
+    target_root: Annotated[Path, typer.Option(help="Explicit new, nonexistent runtime directory")],
+) -> None:
+    _runtime_result(lambda: _runtime_service().restore(backup, target_root))
 
 
 def _run_primary_key(value: str) -> int:
