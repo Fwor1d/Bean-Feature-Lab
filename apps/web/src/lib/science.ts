@@ -37,3 +37,9 @@ export const metric = (value: number | null | undefined, digits = 4) =>
 
 export const utcTime = (value: string | null) =>
   value ? new Date(value).toLocaleString("ru-RU", { timeZone: "UTC", hour12: false }) + " UTC" : "—";
+
+/** Missing historical frequencies remain unavailable, including in Plotly heatmaps. */
+export function selectionFrequency(frequencies: Record<string, number>, feature: string): number | null {
+  const value = frequencies[feature];
+  return value != null && Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
+}

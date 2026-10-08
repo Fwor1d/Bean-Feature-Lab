@@ -30,7 +30,7 @@ export function DescriptiveComparisonSelector({ options, selected }: {
 }) {
   const router = useRouter();
   const navigate = (left: number, right: number) => {
-    if (left !== right) router.replace(`/compare?view=descriptive&left=${left}&right=${right}`);
+    if (left !== right) router.push(`/compare?view=descriptive&left=${left}&right=${right}`);
   };
   return <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ mb: 2 }}>
     <FormControl size="small" fullWidth>

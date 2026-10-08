@@ -12,7 +12,7 @@ const originalSelectors: SelectorId[] = ["mutual_information", "anova", "rfe", "
 
 export default async function FeatureBudgetPage({ searchParams }: { searchParams: Promise<Query> }) {
   const query = await searchParams;
-  const pca = query.budget === "pca_components";
+  const pca = query.budget === "pca_components" || query.selector === "pca";
   let series: FeatureBudgetPoint[] = [];
   let runs: Run[] = [];
   let experiments: Experiment[] = [];
@@ -129,7 +129,7 @@ export default async function FeatureBudgetPage({ searchParams }: { searchParams
       <div className="table-heading"><h2 id="sufficiency-title">Paired sufficient-k analysis</h2><span className="table-note">Corrected one-sided upper bound · margin 0,01</span></div>
       <Table size="small" aria-label="Результаты sufficient-k по моделям"><TableHead><TableRow><TableCell>Модель</TableCell><TableCell align="right">Минимальное k</TableCell><TableCell align="right">Средняя потеря</TableCell><TableCell align="right">Upper bound</TableCell><TableCell>Baseline</TableCell></TableRow></TableHead><TableBody>{visibleSufficiency.map(item => {
         const comparison = item.comparisons.find(value => value.k_original_features === item.minimal_sufficient_k);
-        return <TableRow key={item.model}><TableCell>{modelLabel[item.model]}</TableCell><TableCell align="right">{item.minimal_sufficient_k ?? "не установлено"}</TableCell><TableCell align="right">{metric(comparison?.mean_loss ?? null, 5)}</TableCell><TableCell align="right">{metric(comparison?.one_sided_upper_confidence_bound ?? null, 5)}</TableCell><TableCell>{item.baseline_run_id ? <Link href={`/runs/${Number(item.baseline_run_id.slice(4))}`}>{item.baseline_run_id}</Link> : "—"}</TableCell></TableRow>;
+        return <TableRow key={item.model}><TableCell>{modelLabel[item.model]}</TableCell><TableCell align="right">{item.status !== "CALCULATED" ? "не рассчитано" : item.minimal_sufficient_k ?? "не установлено"}</TableCell><TableCell align="right">{metric(comparison?.mean_loss ?? null, 5)}</TableCell><TableCell align="right">{metric(comparison?.one_sided_upper_confidence_bound ?? null, 5)}</TableCell><TableCell>{item.baseline_run_id ? <Link href={`/runs/${Number(item.baseline_run_id.slice(4))}`}>{item.baseline_run_id}</Link> : "—"}</TableCell></TableRow>;
       })}</TableBody></Table>
     </section>}
     {!sparse && <p className="scientific-footnote">Критерий: paired loss относительно baseline той же модели, margin 0,01; one-sided Nadeau–Bengio corrected interval с Bonferroni 0,05/15. {visibleSufficiency.length ? visibleSufficiency.map(item => `${modelLabel[item.model]}: ${item.status === "CALCULATED" ? item.minimal_sufficient_k ?? "не установлено" : item.status === "PARTIAL" ? `частично (${item.calculated_comparisons}/15)` : "не рассчитано"}`).join(" · ") : "Для выбранных моделей решений нет."}</p>}

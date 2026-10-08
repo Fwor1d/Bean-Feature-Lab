@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FeatureBudgetPoint } from "./api/contracts";
-import { budgetCohorts, expectedBudgetConditions, metric } from "./science";
+import { budgetCohorts, expectedBudgetConditions, metric, selectionFrequency } from "./science";
 
 const point = (dataset_hash: string, outer_split_set_sha256: string, k_original_features: number): FeatureBudgetPoint => ({
   run_id: `RUN-${k_original_features}`, model: "logistic_regression", selector: "mutual_information",
@@ -26,4 +26,10 @@ describe("scientific display invariants", () => {
     expect(expectedBudgetConditions("rfe")).toBe(6);
     expect(expectedBudgetConditions("l1_logistic")).toBeNull();
   });
+});
+
+it("keeps missing selection frequencies unavailable while preserving measured zero", () => {
+  expect(selectionFrequency({ Area: 0 }, "Area")).toBe(0);
+  expect(selectionFrequency({}, "Area")).toBeNull();
+  expect(selectionFrequency({ Area: NaN }, "Area")).toBeNull();
 });

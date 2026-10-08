@@ -16,7 +16,7 @@ export function FeatureExplorerControls({ models, selectors, budgets, selected }
   const set = (key: string, value: string) => {
     const params = new URLSearchParams(search.toString());
     params.set(key, value);
-    router.replace(`/features?${params.toString()}`);
+    router.push(`/features?${params.toString()}`);
   };
   return <div className="action-row" aria-label="Условие анализа признаков">
     <FormControl size="small" sx={{ minWidth: 190 }}><InputLabel id="feature-model-label">Модель</InputLabel><Select labelId="feature-model-label" label="Модель" value={selected.model} onChange={event => set("model", event.target.value)}>{models.map(model => <MenuItem key={model} value={model}>{modelLabel[model]}</MenuItem>)}</Select></FormControl>

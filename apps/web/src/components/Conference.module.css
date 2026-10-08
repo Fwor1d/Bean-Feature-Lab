@@ -84,3 +84,17 @@
   .note, .subtitle { font-size: 15px; }
 }
 @media (prefers-reduced-motion: reduce) { .conference *, .conference *::before, .conference *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+.footer { position: sticky; bottom: 0; z-index: 2; }
+@media (min-width: 821px) and (max-height: 900px) {
+  .header { padding-block: 8px; }
+  .progress button { padding-block: 12px; }
+  .stage { padding-top: 22px; padding-bottom: 24px; font-size: 17px; }
+  .stage h1 { font-size: 30px; margin-bottom: 18px; }
+  .stage p { margin-bottom: 16px; }
+  .chart { height: 380px; }
+  .lossPlot { height: 350px; }
+  .intro { padding-top: 10px; }
+  .intro > .lead { font-size: 40px; margin-bottom: 28px; }
+}
+@media (max-width: 820px) { .keyHint { display: none; } }

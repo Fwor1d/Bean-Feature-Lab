@@ -31,6 +31,7 @@ export default async function HomePage() {
     const config = experiments.find(item => item.id === run.experiment_id)?.configuration;
     return run.status === "COMPLETED" && config?.selector === "none" && config.k_original_features === 16;
   });
+  const baselineConfig = experiments.find(item => item.id === baseline?.experiment_id)?.configuration;
   return <>
     <h1 className="page-heading">Состояние исследования</h1>
     <p className="page-question">Сколько исходных морфологических признаков нужно для классификации сортов фасоли без существенной потери Macro-F1 относительно модели на всех 16 измерениях?</p>
@@ -43,9 +44,9 @@ export default async function HomePage() {
       <hr className="section-rule" />
       <p className="table-note">{fullProtocol > 0 ? `Рассчитано условий Mutual Information: ${fullProtocol}. Полная кривая содержит 16 значений k для каждой модели; ${partial ? "текущий набор результатов частичный" : "наблюдаемые серии содержат все 16 значений k"}.` : "Рассчитанных full-protocol MI условий пока нет. График остаётся пустым."}</p>
       {latest && latestRun && <p><Link href={`/runs/${latestRun.id}`}>{latest.run_id}</Link> · {modelLabel[latest.model]} · MI · k={latest.budget_value} · Macro-F1 {metric(latest.macro_f1_mean)} · Accuracy {metric(latestRun.metrics?.accuracy_mean)}</p>}
-      {baseline && <p><Link href={`/runs/${baseline.id}`}>{baseline.display_id}</Link> · baseline на 16 исходных признаках · Macro-F1 {metric(baseline.metrics?.macro_f1_mean)}.</p>}
+      {baseline && baselineConfig && <p><Link href={`/runs/${baseline.id}`}>{baseline.display_id}</Link> · {modelLabel[baselineConfig.model]} · baseline на 16 исходных признаках · Macro-F1 {metric(baseline.metrics?.macro_f1_mean)}.</p>}
       <div className="action-row"><Button component={Link} href="/feature-budget" variant="contained" endIcon={<IconArrowRight size={17} />}>Исследовать Feature Budget</Button><Button component={Link} href="/features" variant="outlined">Проверить датасет и признаки</Button></div>
     </section>
-    <p className="scientific-footnote">Минимальное sufficient k по заранее зафиксированному corrected repeated-CV методу: {sufficiency.length ? sufficiency.map(item => `${modelLabel[item.model]} — ${item.minimal_sufficient_k ?? "не установлено"}`).join(" · ") : "не рассчитано"}. Margin 0,01 и Bonferroni 0,05/15 заданы до расчёта; отсутствующие условия не достраиваются.</p>
+    <p className="scientific-footnote">Минимальное sufficient k по заранее зафиксированному corrected repeated-CV методу: {sufficiency.length ? sufficiency.map(item => `${modelLabel[item.model]} — ${item.status !== "CALCULATED" ? "не рассчитано" : item.minimal_sufficient_k ?? "не установлено"}`).join(" · ") : "не рассчитано"}. Margin 0,01 и Bonferroni 0,05/15 заданы до расчёта; отсутствующие условия не достраиваются.</p>
   </>;
 }

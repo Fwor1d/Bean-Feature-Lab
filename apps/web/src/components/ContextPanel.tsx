@@ -29,9 +29,9 @@ const contextCopy: Record<string, { heading: string; groups: { label: string; te
     { label: "Решение", text: "Достаточность определяет one-sided Nadeau–Bengio corrected interval с margin 0,01 и Bonferroni-поправкой внутри модели." },
   ] },
   "/classifier": { heading: "Применение модели", groups: [
-    { label: "Модель", text: "Logistic Regression · 16 исходных признаков" },
+    { label: "Модель", text: "Активная версия из deployment registry; schema, classes и checksum показаны в основной области." },
     { label: "Dataset", text: "UCI Dry Bean · 602" },
-    { label: "Источник конфигурации", text: "RUN-000003" },
+    { label: "Источник конфигурации", text: "Исходный scientific run указан в metadata активной модели." },
     { label: "Режим", text: "Deployment / inference" },
     { label: "Граница", text: "Финальная модель обучена на полном валидированном наборе данных. Это inference-сценарий, а не замена nested-CV оценки качества." },
   ] },
@@ -44,14 +44,14 @@ const contextCopy: Record<string, { heading: string; groups: { label: string; te
 function BudgetContext() {
   const router = useRouter();
   const search = useSearchParams();
-  const budget = search.get("budget") === "pca_components" ? "pca_components" : "original_features";
+  const budget = search.get("budget") === "pca_components" || search.get("selector") === "pca" ? "pca_components" : "original_features";
   const selector = search.get("selector") ?? "mutual_information";
   const model = search.get("model") ?? "all";
   const setParam = (key: string, value: string) => {
     const params = new URLSearchParams(search.toString());
     params.set(key, value);
     if (key === "budget") params.set("selector", value === "pca_components" ? "pca" : "mutual_information");
-    router.replace(`/feature-budget?${params.toString()}`);
+    router.push(`/feature-budget?${params.toString()}`);
   };
   return (
     <>
@@ -71,7 +71,7 @@ function BudgetContext() {
         <FormControl fullWidth size="small" sx={{ "& .MuiOutlinedInput-root": { color: "#fff" }, "& fieldset": { borderColor: "#63717f" }, "& .MuiSvgIcon-root": { color: "#fff" } }}>
           <InputLabel id="selector-label" sx={{ color: "#d4dee7" }}>Метод</InputLabel>
           <Select labelId="selector-label" label="Метод" value={budget === "pca_components" ? "pca" : selector} disabled={budget === "pca_components"} onChange={event => setParam("selector", event.target.value)}>
-            <MenuItem value="mutual_information">Mutual Information</MenuItem><MenuItem value="anova">ANOVA</MenuItem><MenuItem value="rfe">RFE</MenuItem><MenuItem value="l1_logistic">L1 Logistic</MenuItem><MenuItem value="tree_importance">Tree importance</MenuItem><MenuItem value="pca">PCA</MenuItem>
+            <MenuItem value="mutual_information">Mutual Information</MenuItem><MenuItem value="anova">ANOVA</MenuItem><MenuItem value="rfe">RFE</MenuItem><MenuItem value="l1_logistic">L1 Logistic</MenuItem><MenuItem value="tree_importance">Tree importance</MenuItem>{budget === "pca_components" && <MenuItem value="pca">PCA</MenuItem>}
           </Select>
         </FormControl>
         <p className="context-copy">Фильтр показывает только реальные завершённые conditions. Comparator-методы используют заранее утверждённые контрольные точки; отсутствующие точки не интерполируются.</p>
@@ -91,7 +91,7 @@ function BudgetContext() {
         <p className="context-copy">Допустимая потеря Macro-F1: 0,01. Односторонняя верхняя граница считается Nadeau–Bengio corrected method с Bonferroni α=0,05/15.</p>
       </div>
       <Button component={Link} href="/experiments" variant="outlined" endIcon={<IconArrowRight size={16} />}
-        sx={{ color: "#d9e8ff", borderColor: "#7198d6", width: "100%" }}>Сохранить конфигурацию</Button>
+        sx={{ color: "#d9e8ff", borderColor: "#7198d6", width: "100%" }}>К реестру конфигураций</Button>
       <p className="context-copy">Сохранённую конфигурацию запускает worker; анализ не изменяет научные условия.</p>
     </>
   );

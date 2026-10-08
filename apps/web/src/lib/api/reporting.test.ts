@@ -31,7 +31,7 @@ it("downloads only the selected snapshot with valid binary PDF and safe filename
   const fetch = vi.fn().mockResolvedValue(new Response(new Uint8Array([37, 80, 68, 70, 45, 255, 0]), { headers: { "Content-Type": "application/pdf", "X-Evidence-SHA256": snapshot.evidence_sha256, "Content-Disposition": 'attachment; filename="../../unsafe.pdf"' } }));
   vi.stubGlobal("fetch", fetch);
   const output = await reportPDF(snapshot);
-  expect(fetch).toHaveBeenCalledWith(expect.stringContaining("fixed-id/pdf"), { cache: "no-store" });
+  expect(fetch).toHaveBeenCalledWith(expect.stringContaining("fixed-id/pdf"), expect.objectContaining({ cache: "no-store" }));
   expect(new Uint8Array(await output.blob.arrayBuffer())).toEqual(new Uint8Array([37, 80, 68, 70, 45, 255, 0]));
   expect(output.filename).toBe("BeanFeatureLab-aaaaaaaaaaaaaaaa.pdf");
 });

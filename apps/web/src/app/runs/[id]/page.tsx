@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Alert, Chip, Divider, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from "@mui/material";
+import { RunExports } from "@/components/RunExports";
 import { FoldGrid } from "@/components/FoldGrid";
 import { api, apiErrorMessage, ApiError } from "@/lib/api/client";
 import type { Experiment, FoldResult, Run, RunDetail, RunResources, RunSummary, RunVerification } from "@/lib/api/contracts";
@@ -72,13 +73,7 @@ export default async function RunDetailPage({ params, searchParams }: {
           <div><dt>Artifact</dt><dd>{detail.artifact_verified ? "SHA-256 проверен" : "Не подтверждён"} · {detail.result_artifact}<br />{shortHash(detail.result_sha256)}</dd></div>
         </dl>
         {verification?.errors.length ? <Alert severity="error" sx={{ mt: 2 }}>{verification.errors.join(" · ")}</Alert> : null}
-        {verification?.verified && <div className="action-row" aria-label="Экспорт запуска">
-          <a href={`/api/backend/api/v1/runs/${id}/export/result.json`} download>Результат JSON</a>
-          <a href={`/api/backend/api/v1/runs/${id}/export/config.json`} download>Снимок config</a>
-          <a href={`/api/backend/api/v1/runs/${id}/export/summary.md`} download>Сводка Markdown</a>
-          <a href={`/api/backend/api/v1/runs/${id}/export/folds.csv`} download>Folds CSV</a>
-          {scientific?.feature_stability && <a href={`/api/backend/api/v1/runs/${id}/export/selected-features.csv`} download>Отбор признаков CSV</a>}
-        </div>}
+        {verification?.verified && <RunExports id={id} selection={Boolean(scientific?.feature_stability)} />}
         <details><summary>Поисковое пространство и версии пакетов</summary><pre className="metadata-pre">{JSON.stringify({ search_space: config?.search_space, package_versions: detail.provenance.package_versions, fingerprint: detail.fingerprint }, null, 2)}</pre></details>
       </section>}
       {scientific?.feature_stability && <section className="section-surface stack-section" aria-labelledby="stability-title">

@@ -16,7 +16,7 @@ const baseUrl = typeof window === "undefined"
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}${path}`, { ...init, cache: "no-store" });
+    response = await fetch(`${baseUrl}${path}`, { ...init, cache: "no-store", signal: init?.signal ?? AbortSignal.timeout(30_000) });
   } catch {
     throw new ApiError(0, "api_unavailable", "API недоступен. Запустите локальный сервер и повторите запрос.");
   }
@@ -65,6 +65,6 @@ export function apiErrorMessage(error: unknown): string {
   if (error.code === "persistence_error") return "Хранилище недоступно. Проверьте миграции и работу API.";
   if (error.code === "demo_read_only") return "Публичная демонстрация доступна только для чтения.";
   if (error.code === "not_found") return "Запись не найдена. Обновите список.";
-  if (error.code === "validation_error" || error.code === "invalid_configuration") return "Проверьте поля конфигурации и повторите запрос.";
+  if (error.code === "validation_error" || error.code === "invalid_configuration") return "Проверьте значения полей и повторите запрос.";
   return error.message;
 }

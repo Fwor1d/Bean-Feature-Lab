@@ -26,3 +26,12 @@ it("preserves expiry/errors and renderer backoff; network failure is explicit", 
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
   expect((await GET(...args)).status).toBe(503);
 });
+it("bounds chunked POST bodies before forwarding to the API", async () => {
+  const { POST } = await import("./route");
+  const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+  const stream = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new Uint8Array(16_384)); controller.enqueue(new Uint8Array(16_385)); controller.close(); } });
+  const request = new NextRequest("http://localhost/api/backend/api/v1/classifier/predict", { method: "POST", body: stream, duplex: "half" } as ConstructorParameters<typeof NextRequest>[1]);
+  const response = await POST(request, { params: Promise.resolve({ path: ["api", "v1", "classifier", "predict"] }) });
+  expect(response.status).toBe(413);
+  expect(fetch).not.toHaveBeenCalled();
+});

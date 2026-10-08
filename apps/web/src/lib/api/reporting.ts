@@ -9,7 +9,7 @@ export const reportsBase = "/api/backend/api/v1/reports/core";
 export class ReportRequestError extends Error { constructor(public code: string, message: string) { super(message); } }
 export async function reportRequest<T>(path: string): Promise<T> {
   try {
-    const response = await fetch(`${reportsBase}/${path}`, { cache: "no-store" });
+    const response = await fetch(`${reportsBase}/${path}`, { cache: "no-store", signal: AbortSignal.timeout(120_000) });
     const body = await response.json();
     if (!response.ok) throw new ReportRequestError(body.error?.code ?? "api_unavailable", body.error?.message ?? "API недоступен. Повторите запрос.");
     return body as T;
@@ -36,7 +36,7 @@ export function acceptsNavigation(event: { key: string; altKey: boolean; ctrlKey
 /** Download stays bound to the visible evidence, including after cache expiry. */
 export async function reportPDF(snapshot: Pick<CoreSnapshot, "snapshot_id" | "evidence_sha256">): Promise<{ blob: Blob; filename: string }> {
   try {
-    const response = await fetch(`${reportsBase}/${encodeURIComponent(snapshot.snapshot_id)}/pdf`, { cache: "no-store" });
+    const response = await fetch(`${reportsBase}/${encodeURIComponent(snapshot.snapshot_id)}/pdf`, { cache: "no-store", signal: AbortSignal.timeout(120_000) });
     if (!response.ok) {
       const body = await response.json();
       throw new ReportRequestError(body.error?.code ?? "pdf_failed", body.error?.message ?? "Не удалось скачать PDF. Повторите запрос.");

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Box } from "@mui/material";
+import { ruRU } from "@mui/x-data-grid/locales";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import type { FoldResult } from "@/lib/api/contracts";
 import { metric } from "@/lib/science";
@@ -18,6 +19,6 @@ export function FoldGrid({ runId, folds }: { runId: number; folds: FoldResult[] 
     { field: "selected_original_features", headerName: "Признаки", minWidth: 260, flex: 1, renderCell: ({ row }) => row.selected_original_features?.join(", ") ?? "PCA / не применимо" },
   ];
   return <Box sx={{ width: "100%", minHeight: 230 }}><DataGrid rows={folds} columns={columns} getRowId={row => row.fold_id}
-    density="compact" disableRowSelectionOnClick initialState={{ pagination: { paginationModel: { pageSize: 15 } } }}
+    localeText={ruRU.components.MuiDataGrid.defaultProps.localeText} density="compact" disableRowSelectionOnClick initialState={{ pagination: { paginationModel: { pageSize: 15 } } }}
     pageSizeOptions={[15, 30]} sx={{ border: 0, "& .MuiDataGrid-cell": { fontVariantNumeric: "tabular-nums" } }} /></Box>;
 }

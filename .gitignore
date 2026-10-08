@@ -35,3 +35,5 @@ data/processed/*
 artifacts/tmp/
 artifacts/cache/
 data/processed/cache/
+
+.impeccable/critique/

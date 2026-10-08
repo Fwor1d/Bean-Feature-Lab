@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Box, Chip } from "@mui/material";
+import { ruRU } from "@mui/x-data-grid/locales";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import type { RunStatus } from "@/lib/api/contracts";
 import { metric, runLabel, utcTime } from "@/lib/science";
@@ -36,6 +37,6 @@ const columns: GridColDef<RunGridRow>[] = [
 export function RunsGrid({ rows }: { rows: RunGridRow[] }) {
   return <Box sx={{ width: "100%", minHeight: 260 }}><p className="grid-scroll-note">Для остальных колонок прокрутите таблицу вправо →</p><DataGrid rows={rows} columns={columns}
     density="compact" disableRowSelectionOnClick initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
-    pageSizeOptions={[10, 25, 50]} localeText={{ noRowsLabel: "Запусков пока нет" }}
+    pageSizeOptions={[10, 25, 50]} localeText={{ ...ruRU.components.MuiDataGrid.defaultProps.localeText, noRowsLabel: "Запусков пока нет" }}
     sx={{ border: 0, "& .MuiDataGrid-cell": { fontVariantNumeric: "tabular-nums" } }} /></Box>;
 }

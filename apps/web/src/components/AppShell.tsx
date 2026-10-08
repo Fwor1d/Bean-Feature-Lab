@@ -42,7 +42,7 @@ function Navigation({ onNavigate }: { onNavigate?: () => void }) {
           <List disablePadding dense>
             {group.items.map(item => (
               <ListItemButton key={item.href} component={Link} href={item.href} onClick={onNavigate}
-                selected={pathname === item.href || (item.href === "/runs" && pathname.startsWith("/runs/"))} sx={{ mx: .75, my: .3, borderRadius: .5, color: "#e6edf3", minHeight: 42,
+                aria-current={pathname === item.href || (item.href === "/runs" && pathname.startsWith("/runs/")) ? "page" : undefined} selected={pathname === item.href || (item.href === "/runs" && pathname.startsWith("/runs/"))} sx={{ mx: .75, my: .3, borderRadius: .5, color: "#e6edf3", minHeight: 42,
                   "&.Mui-selected": { bgcolor: "#304b67", color: "#fff" },
                   "&:hover": { bgcolor: "#384652" }, "&.Mui-selected:hover": { bgcolor: "#3b5875" } }}>
                 <ListItemIcon sx={{ color: "inherit", minWidth: 31 }}><item.icon size={18} stroke={1.7} /></ListItemIcon>
@@ -77,10 +77,11 @@ export function AppShell({ children, datasets, runs }: { children: React.ReactNo
   const pathname = usePathname();
   const selectedRun = runs?.find(run => pathname === `/runs/${run.id}`);
   const detailId = pathname.match(/^\/runs\/(\d+)$/)?.[1];
-  if (pathname === "/conference") return <ThemeProvider theme={theme}><CssBaseline />{children}</ThemeProvider>;
+  if (pathname === "/conference") return <ThemeProvider theme={theme}><CssBaseline /><a className="skip-link" href="#main-content">К основному содержимому</a>{children}</ThemeProvider>;
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
+      <a className="skip-link" href="#main-content">К основному содержимому</a>
       <div className="app-frame">
         <header className="app-top">
           <IconButton className="nav-toggle" aria-label="Открыть навигацию" onClick={() => setNavOpen(true)} sx={{ color: "#fff" }}><IconMenu2 size={20} /></IconButton>
@@ -97,7 +98,7 @@ export function AppShell({ children, datasets, runs }: { children: React.ReactNo
         </header>
         <div className="app-body">
           <Navigation />
-          <main className="workspace" id="main-content">{children}</main>
+          <main className="workspace" id="main-content" tabIndex={-1}>{children}</main>
           <aside className="context-panel" aria-label="Контекст и параметры"><Suspense fallback={<Typography sx={{ color: "#c4cdd5", fontSize: 12 }}>Загрузка контекста…</Typography>}><ContextPanel runs={runs} /></Suspense></aside>
         </div>
         <Drawer open={navOpen} onClose={() => setNavOpen(false)} aria-label="Навигация" slotProps={{ paper: { sx: { width: 240, bgcolor: "#20272e" } } }}>

@@ -2,9 +2,10 @@
 
 import dynamic from "next/dynamic";
 import type { Layout } from "plotly.js";
+import { metric, selectionFrequency } from "@/lib/science";
 import type { FeatureSelectionPoint } from "@/lib/api/contracts";
 
-const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
+const Plot = dynamic(() => import("react-plotly.js"), { ssr: false, loading: () => <p role="status" className="table-note">Загрузка графика…</p> });
 
 export function FeatureSelectionHeatmap({ features, points }: {
   features: string[];
@@ -20,13 +21,13 @@ export function FeatureSelectionHeatmap({ features, points }: {
     xaxis: { title: { text: "Бюджет исходных признаков k" }, dtick: 1 },
     yaxis: { automargin: true },
   };
-  return <div className="figure-frame" role="img" aria-label={`Частота отбора ${features.length} признаков для ${ordered.length} рассчитанных бюджетов`}>
+  return <><div className="figure-frame" role="img" aria-label={`Частота отбора ${features.length} признаков для ${ordered.length} рассчитанных бюджетов`}>
     <Plot
       data={[{
         type: "heatmap",
         x: ordered.map(point => point.k_original_features),
         y: features,
-        z: features.map(feature => ordered.map(point => point.selection_frequency[feature] ?? 0)),
+        z: features.map(feature => ordered.map(point => selectionFrequency(point.selection_frequency, feature))),
         zmin: 0,
         zmax: 1,
         colorscale: [[0, "#f1f4f7"], [0.5, "#77a6c9"], [1, "#174f7e"]],
@@ -38,5 +39,5 @@ export function FeatureSelectionHeatmap({ features, points }: {
       useResizeHandler
       style={{ width: "100%", height: "100%" }}
     />
-  </div>;
+  </div><details className="stack-section"><summary>Частоты отбора — таблица значений</summary><div className="table-surface" role="region" aria-label="Таблица частот отбора по бюджетам" tabIndex={0}><table><caption>Доля outer folds; отсутствующие значения не рассчитаны</caption><thead><tr><th scope="col">Признак</th>{ordered.map(point => <th scope="col" key={point.run_id}>k={point.k_original_features}</th>)}</tr></thead><tbody>{features.map(feature => <tr key={feature}><th scope="row">{feature}</th>{ordered.map(point => <td key={point.run_id}>{metric(selectionFrequency(point.selection_frequency, feature), 2)}</td>)}</tr>)}</tbody></table></div></details></>;
 }

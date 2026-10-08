@@ -2,7 +2,7 @@ import Link from "@/components/ClientLink";
 import { Alert, Button, Chip, Stack, Table, TableBody, TableCell, TableHead, TableRow } from "@mui/material";
 import { ComparisonSelector, type ComparisonOption } from "@/components/ComparisonSelector";
 import { DescriptiveComparisonSelector, type DescriptiveRunOption } from "@/components/DescriptiveComparisonSelector";
-import { api, apiErrorMessage } from "@/lib/api/client";
+import { api, ApiError, apiErrorMessage } from "@/lib/api/client";
 import type { DescriptiveComparison, PairedComparison, Run, RunSummary, ScientificSummary } from "@/lib/api/contracts";
 import { metric, modelLabel, selectorLabel } from "@/lib/science";
 
@@ -53,6 +53,7 @@ async function DescriptiveView({ params }: { params: CompareParams }) {
     });
     const requestedLeft = options.find(option => option.id === Number(params.left));
     const requestedRight = options.find(option => option.id === Number(params.right));
+    if ((params.left && !requestedLeft) || (params.right && !requestedRight) || (params.left && params.left === params.right)) throw new ApiError(422, "unsupported_comparison", "Выбранная пара недоступна. Откройте сравнение заново и выберите два завершённых условия.");
     const left = requestedLeft ?? options[0];
     const right = requestedRight && requestedRight.id !== left?.id
       ? requestedRight
@@ -67,8 +68,8 @@ async function DescriptiveView({ params }: { params: CompareParams }) {
     <p className="page-question">Два завершённых условия сопоставляются по идентичным frozen outer folds. Разности описательные: экран не объявляет победителя и не подменяет заранее зафиксированный sufficient-k анализ.</p>
     <CompareNavigation active="descriptive" />
     {error && <Alert severity="warning" sx={{ mb: 2 }}>{error}</Alert>}
+    {selected && options.length > 1 && <DescriptiveComparisonSelector options={options} selected={selected} />}
     {result && selected ? <>
-      <DescriptiveComparisonSelector options={options} selected={selected} />
       {result.left_summary.budget_kind !== result.right_summary.budget_kind && <Alert severity="info" sx={{ mb: 2 }}>Представления различаются. PCA components и исходные физические признаки показаны раздельно и не трактуются как один budget.</Alert>}
       <section className="section-surface" aria-labelledby="descriptive-summary-title">
         <h2 id="descriptive-summary-title" className="section-title">Описательная парная разность A − B</h2>
@@ -117,7 +118,9 @@ async function SufficiencyView({ params }: { params: CompareParams }) {
       const configuration = configs.get(pair.compact.experiment_id);
       return configuration?.k_original_features ? [{ compactId: pair.compact.id, baselineId: pair.baseline.id, compactDisplayId: pair.compact.display_id, baselineDisplayId: pair.baseline.display_id, model: configuration.model, k: configuration.k_original_features }] : [];
     }).sort((a, b) => a.model.localeCompare(b.model) || a.k - b.k);
-    const selected = pairs.find(pair => pair.compact.id === Number(params.compact) && pair.baseline.id === Number(params.baseline)) ?? pairs[0];
+    const requested = pairs.find(pair => pair.compact.id === Number(params.compact) && pair.baseline.id === Number(params.baseline));
+    if ((params.compact || params.baseline) && !requested) throw new ApiError(422, "unsupported_comparison", "Выбранная пара недоступна. Откройте сравнение заново и выберите совместимые условия.");
+    const selected = requested ?? pairs[0];
     if (selected) {
       compact = selected.compact; baseline = selected.baseline;
       [comparison, compactSummary, baselineSummary] = await Promise.all([api.pairedComparison(compact.id, baseline.id), api.runSummary(compact.id), api.runSummary(baseline.id)]);
@@ -129,8 +132,8 @@ async function SufficiencyView({ params }: { params: CompareParams }) {
     <p className="page-question">Компактная MI-конфигурация сопоставляется с baseline той же модели на тех же outer folds. Решение использует заранее зафиксированный corrected repeated-CV interval и margin 0,01.</p>
     <CompareNavigation active="sufficiency" />
     {error && <Alert severity="warning" sx={{ mb: 2 }}>{error}</Alert>}
+    {compact && baseline && selectorOptions.length > 1 && <ComparisonSelector options={selectorOptions} selected={{ compactId: compact.id, baselineId: baseline.id }} />}
     {comparison && compact && baseline ? <>
-      {selectorOptions.length > 1 && <ComparisonSelector options={selectorOptions} selected={{ compactId: compact.id, baselineId: baseline.id }} />}
       <section className="section-surface" aria-labelledby="comparison-title">
         <h2 id="comparison-title" className="section-title">{modelLabel[compactSummary!.summary!.model]} · исходные признаки</h2>
         <div className="status-line" style={{ marginBottom: 16 }}><Chip label={sameSplits ? "Outer splits совпадают" : "Разбиения не совпали"} color={sameSplits ? "success" : "error"} size="small" variant="outlined" /><span>Dataset SHA-256 <code>{comparison.dataset_hash}</code></span></div>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Box } from "@mui/material";
+import { ruRU } from "@mui/x-data-grid/locales";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { metric, modelLabel } from "@/lib/science";
 import type { ModelId } from "@/lib/api/contracts";
@@ -30,7 +31,7 @@ export function BudgetResultsGrid({ rows, budgetHeader = "Исходных пр�
   return <Box sx={{ width: "100%", minHeight: 170 }}><p className="grid-scroll-note">Для остальных колонок прокрутите таблицу вправо →</p>
     <DataGrid rows={rows} columns={visibleColumns} density="compact" disableRowSelectionOnClick
       initialState={{ pagination: { paginationModel: { pageSize: 10 } } }} pageSizeOptions={[10, 25, 50]}
-      localeText={{ noRowsLabel: "Нет рассчитанных условий для этого представления" }}
+      localeText={{ ...ruRU.components.MuiDataGrid.defaultProps.localeText, noRowsLabel: "Нет рассчитанных условий для этого представления" }}
       sx={{ border: 0, "& .MuiDataGrid-cell": { fontVariantNumeric: "tabular-nums" } }} />
   </Box>;
 }
